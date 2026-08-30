@@ -1,0 +1,244 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Click-Anywhere Route Optimizer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>{{ leaflet_css|safe }}</style>
+<script>{{ leaflet_js|safe }}</script>
+<style>
+  html, body { margin:0; padding:0; height:100%; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+  #map { position:absolute; top:64px; bottom:0; left:0; right:0; cursor: crosshair; }
+  #topbar {
+    height:64px; display:flex; align-items:center; gap:10px; padding:0 16px;
+    background:#1b2733; color:white; box-sizing:border-box; flex-wrap:wrap;
+  }
+  #topbar h1 { font-size:15px; margin:0; font-weight:600; white-space:nowrap; }
+  #topbar select, #topbar button, #topbar input {
+    font-size:13px; padding:6px 10px; border-radius:6px; border:1px solid #46586b;
+    background:#26374a; color:white; cursor:pointer;
+  }
+  #topbar input { cursor:text; width:220px; }
+  #topbar input::placeholder { color:#8ba0b5; }
+  #topbar button:disabled { opacity:0.4; cursor:not-allowed; }
+  #topbar button.primary { background:#9b59b6; border-color:#9b59b6; }
+  #topbar button.danger { background:#c0392b; border-color:#c0392b; }
+  #topbar button.search { background:#2980b9; border-color:#2980b9; cursor:pointer; }
+  #hint {
+    position:absolute; top:78px; left:50%; transform:translateX(-50%); background:white; padding:8px 16px;
+    border-radius:8px; font-size:13px; box-shadow:0 1px 6px rgba(0,0,0,.3); z-index:600; text-align:center;
+  }
+  #stats {
+    position:absolute; bottom:16px; left:16px; background:white; padding:12px 16px;
+    border-radius:8px; font-size:12px; box-shadow:0 1px 6px rgba(0,0,0,.3); z-index:500; max-width:300px; line-height:1.7;
+    display:none;
+  }
+  #stats b { color:#1b2733; }
+  #stats .warn { color:#c0392b; font-weight:600; }
+  #error {
+    position:absolute; top:78px; left:50%; transform:translateX(-50%); background:#c0392b; color:white; padding:8px 16px;
+    border-radius:8px; font-size:13px; box-shadow:0 1px 6px rgba(0,0,0,.3); z-index:600; display:none;
+  }
+  .pin-label {
+    background:#2c3e50; color:white; border-radius:50%; width:26px; height:26px;
+    text-align:center; line-height:26px; font-size:12px; font-weight:600; box-shadow:0 0 0 2px white;
+  }
+  .pin-start { background:#27ae60; }
+  .pin-end { background:#c0392b; }
+</style>
+</head>
+<body>
+<div id="topbar">
+  <h1>Click-Anywhere Route Optimizer</h1>
+  <select id="citySelect">
+    {% for c in cities %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+  </select>
+  <select id="basemapSelect">
+    <option value="satellite">Satellite view</option>
+    <option value="street">Street map</option>
+  </select>
+  <select id="methodSelect">
+    <option value="quantum">Quantum-inspired (QUBO + SA)</option>
+    <option value="classical">Classical (nearest-neighbor + 2-opt)</option>
+  </select>
+  <input id="searchInput" type="text" placeholder="Type a place name, e.g. MG Road...">
+  <button id="searchBtn" class="search">Search &amp; add</button>
+  <button id="solveBtn" class="primary" disabled>Solve route</button>
+  <button id="clearBtn" class="danger">Clear points</button>
+</div>
+<div id="map"></div>
+<div id="hint">Click the map, or type a place name and hit <b>Search &amp; add</b>, to drop a <b>Start</b> point, then an <b>End</b> point, then any stops in between (up to 10 total).</div>
+<div id="error"></div>
+<div id="stats"></div>
+
+<script>
+const CITIES = {{ cities|tojson }};
+const CENTERS = {{ centers|tojson }};
+
+const satelliteLayer = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community', maxZoom: 19 }
+);
+const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
+});
+
+const map = L.map('map', { layers: [satelliteLayer] }).setView(CENTERS[CITIES[0]], 13);
+
+let clickedPoints = [];   // [[lat, lon], ...]
+let pointMarkers = [];    // Leaflet markers for clicked points
+let routeLayer = null;    // current drawn route (polyline + numbered stops)
+
+function pinIcon(index, total) {
+  const cls = index === 0 ? 'pin-start' : (index === total - 1 ? 'pin-end' : '');
+  const label = index === 0 ? 'S' : (index === total - 1 ? 'E' : String(index));
+  return L.divIcon({ className: '', html: `<div class="pin-label ${cls}">${label}</div>` });
+}
+
+function redrawPins() {
+  pointMarkers.forEach(m => map.removeLayer(m));
+  pointMarkers = clickedPoints.map((pt, i) =>
+    L.marker(pt, { icon: pinIcon(i, clickedPoints.length) }).addTo(map)
+  );
+  document.getElementById('solveBtn').disabled = clickedPoints.length < 2;
+}
+
+function showError(msg) {
+  const el = document.getElementById('error');
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+map.on('click', (e) => {
+  if (clickedPoints.length >= 10) {
+    showError('Max 10 points for a live demo-speed solve — clear and start over if you need more.');
+    return;
+  }
+  clickedPoints.push([e.latlng.lat, e.latlng.lng]);
+  redrawPins();
+  document.getElementById('hint').style.display = clickedPoints.length === 0 ? 'block' : 'none';
+});
+
+async function geocodeAndAdd() {
+  const input = document.getElementById('searchInput');
+  const query = input.value.trim();
+  if (!query) return;
+  if (clickedPoints.length >= 10) {
+    showError('Max 10 points for a live demo-speed solve — clear and start over if you need more.');
+    return;
+  }
+  const btn = document.getElementById('searchBtn');
+  btn.disabled = true;
+  btn.textContent = 'Searching...';
+  try {
+    const city = document.getElementById('citySelect').value;
+    // Appending the city name biases results to the right place (e.g. two
+    // different "MG Road"s exist across Indian cities) without needing a
+    // separate backend endpoint — this calls OpenStreetMap's free public
+    // search directly from the browser.
+    const fullQuery = `${query}, ${city}, India`;
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(fullQuery)}`;
+    const resp = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+    if (!resp.ok) throw new Error(`search service returned ${resp.status}`);
+    const results = await resp.json();
+    if (!results.length) {
+      showError(`Couldn't find "${query}" in ${city}. Try a more specific or well-known name.`);
+      return;
+    }
+    const lat = parseFloat(results[0].lat), lon = parseFloat(results[0].lon);
+    clickedPoints.push([lat, lon]);
+    redrawPins();
+    map.setView([lat, lon], 15);
+    input.value = '';
+    document.getElementById('hint').style.display = 'none';
+  } catch (err) {
+    showError('Search failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Search & add';
+  }
+}
+
+document.getElementById('searchBtn').addEventListener('click', geocodeAndAdd);
+document.getElementById('searchInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); geocodeAndAdd(); }
+});
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  clickedPoints = [];
+  redrawPins();
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+  document.getElementById('stats').style.display = 'none';
+  document.getElementById('hint').style.display = 'block';
+});
+
+document.getElementById('basemapSelect').addEventListener('change', (e) => {
+  if (e.target.value === 'satellite') { map.removeLayer(streetLayer); map.addLayer(satelliteLayer); }
+  else { map.removeLayer(satelliteLayer); map.addLayer(streetLayer); }
+});
+
+document.getElementById('citySelect').addEventListener('change', (e) => {
+  map.setView(CENTERS[e.target.value], 13);
+  clickedPoints = [];
+  redrawPins();
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+  document.getElementById('stats').style.display = 'none';
+});
+
+document.getElementById('solveBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('solveBtn');
+  btn.disabled = true;
+  btn.textContent = 'Solving...';
+  document.getElementById('hint').style.display = 'none';
+  // On a free-tier host the very first solve for a city can take 30-60s+
+  // (server waking up from sleep, plus fetching live street data) — this
+  // just tells the user that's expected instead of the button looking stuck.
+  const slowNotice = setTimeout(() => { btn.textContent = 'Still solving (first request can be slow)...'; }, 6000);
+
+  try {
+    const resp = await fetch('/api/solve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        city: document.getElementById('citySelect').value,
+        points: clickedPoints,
+        method: document.getElementById('methodSelect').value,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) { showError(data.error || 'Solve failed.'); return; }
+
+    if (routeLayer) map.removeLayer(routeLayer);
+    routeLayer = L.layerGroup().addTo(map);
+    L.polyline(data.route_path, { color: '#2c3e50', weight: 5, opacity: 0.9 }).addTo(routeLayer);
+
+    // re-order the pins to match the solved visiting order and relabel them
+    const orderedPoints = data.order.map(i => clickedPoints[i]);
+    clickedPoints = orderedPoints;
+    redrawPins();
+
+    const maxSnap = Math.max(...data.snap_info.map(s => s.snap_distance_m));
+    const sourceLabel = data.source === 'osm'
+      ? 'Real OpenStreetMap street data'
+      : `Offline fallback (curated landmarks) — ${data.fallback_reason || 'live map data unavailable'}`;
+
+    document.getElementById('stats').style.display = 'block';
+    document.getElementById('stats').innerHTML = `
+      <b>Route found</b> (${data.method === 'quantum' ? 'quantum-inspired' : 'classical 2-opt'})<br>
+      Total time: <b>${data.cost_minutes} min</b><br>
+      Solve time: ${data.solve_ms} ms<br>
+      Road data: ${sourceLabel}<br>
+      ${maxSnap > 150 ? `<span class="warn">Note: one of your clicks was ${maxSnap}m from the nearest known road junction — snapped to the closest one.</span>` : `Clicks snapped within ${maxSnap}m of real junctions.`}
+    `;
+  } catch (err) {
+    showError('Request failed: ' + err.message);
+  } finally {
+    clearTimeout(slowNotice);
+    btn.disabled = clickedPoints.length < 2;
+    btn.textContent = 'Solve route';
+  }
+});
+</script>
+</body>
+</html>
