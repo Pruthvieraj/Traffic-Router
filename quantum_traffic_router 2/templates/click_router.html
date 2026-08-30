@@ -47,6 +47,25 @@
   }
   #stats b { color:#1b2733; }
   #stats .warn { color:#c0392b; font-weight:600; }
+  #directions {
+    position:absolute; top:78px; right:16px; width:300px; max-height:calc(100vh - 160px);
+    background:white; border-radius:8px; box-shadow:0 1px 6px rgba(0,0,0,.3); z-index:500;
+    display:none; overflow:hidden; flex-direction:column;
+  }
+  #directions-header {
+    padding:10px 14px; font-size:13px; font-weight:700; color:#1b2733; border-bottom:1px solid #eee;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  #directions-header button {
+    background:none; border:none; color:#8ba0b5; font-size:16px; cursor:pointer; padding:0 4px; line-height:1;
+  }
+  #directions-list { list-style:none; margin:0; padding:6px 0; overflow-y:auto; max-height:calc(100vh - 210px); }
+  #directions-list li {
+    padding:8px 14px; font-size:12.5px; color:#2c3e50; line-height:1.5; border-bottom:1px solid #f2f2f2;
+  }
+  #directions-list li:last-child { border-bottom:none; }
+  #directions-list li .dist { color:#8ba0b5; font-size:11px; display:block; margin-top:2px; }
+  #directions-list li.stop-marker { background:#f7f4fb; font-weight:600; color:#7d3c98; }
   #error {
     position:absolute; top:78px; left:50%; transform:translateX(-50%); background:#c0392b; color:white; padding:8px 16px;
     border-radius:8px; font-size:13px; box-shadow:0 1px 6px rgba(0,0,0,.3); z-index:600; display:none; max-width:600px; text-align:center;
@@ -84,6 +103,13 @@
 <div id="hint">Click the map, or search a place above, to drop a <b>Start</b> point, then an <b>End</b> point, then any stops in between (up to 10 total). Routes follow real streets, powered by OSRM.</div>
 <div id="error"></div>
 <div id="stats"></div>
+<div id="directions">
+  <div id="directions-header">
+    <span>Turn-by-turn directions</span>
+    <button id="directionsClose" title="Hide">&times;</button>
+  </div>
+  <ol id="directions-list"></ol>
+</div>
 
 <script>
 const CITIES = {{ cities|tojson }};
@@ -134,6 +160,7 @@ function addPoint(lat, lon) {
   document.getElementById('hint').style.display = 'none';
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
   document.getElementById('stats').style.display = 'none';
+  document.getElementById('directions').style.display = 'none';
 }
 
 map.on('click', (e) => addPoint(e.latlng.lat, e.latlng.lng));
@@ -143,6 +170,7 @@ document.getElementById('clearBtn').addEventListener('click', () => {
   redrawPins();
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
   document.getElementById('stats').style.display = 'none';
+  document.getElementById('directions').style.display = 'none';
   document.getElementById('hint').style.display = 'block';
 });
 
@@ -157,6 +185,7 @@ document.getElementById('citySelect').addEventListener('change', (e) => {
   redrawPins();
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
   document.getElementById('stats').style.display = 'none';
+  document.getElementById('directions').style.display = 'none';
 });
 
 // ---------- Search with live autocomplete (OpenStreetMap Nominatim) ----------
@@ -247,7 +276,7 @@ async function osrmTable(points) {
 
 async function osrmRoute(pointsInOrder) {
   const coordStr = pointsInOrder.map(p => `${p[1]},${p[0]}`).join(';');
-  const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+  const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson&steps=true`;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Routing service returned ${resp.status}`);
   const data = await resp.json();
@@ -256,8 +285,94 @@ async function osrmRoute(pointsInOrder) {
   }
   const route = data.routes[0];
   const latlngs = route.geometry.coordinates.map(c => [c[1], c[0]]); // GeoJSON is [lon,lat]
-  return { latlngs, distance_km: route.distance / 1000, duration_min: route.duration / 60 };
+  return { latlngs, distance_km: route.distance / 1000, duration_min: route.duration / 60, legs: route.legs || [] };
 }
+
+// ---------- Turn-by-turn directions, built from OSRM's per-step maneuver data ----------
+
+function stopLabel(idx, total) {
+  if (idx === 0) return 'Start';
+  if (idx === total - 1) return 'End';
+  return `Stop ${idx}`;
+}
+
+function formatDistance(m) {
+  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
+}
+
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+}
+
+function maneuverText(step) {
+  const m = step.maneuver || {};
+  const name = step.name && step.name.trim() ? step.name : 'the road';
+  const mod = m.modifier ? m.modifier.replace('_', ' ') : '';
+  switch (m.type) {
+    case 'depart':
+      return `Head${mod ? ' ' + mod : ''} on ${name}`;
+    case 'arrive':
+      return `Arrive${mod ? ', destination on the ' + mod : ''}`;
+    case 'turn':
+    case 'end of road':
+      return `Turn ${mod || 'onto'} onto ${name}`;
+    case 'merge':
+      return `Merge onto ${name}`;
+    case 'fork':
+      return `Keep ${mod || 'straight'} onto ${name}`;
+    case 'ramp':
+    case 'on ramp':
+    case 'off ramp':
+      return `Take the ramp${mod ? ' ' + mod : ''} onto ${name}`;
+    case 'roundabout':
+    case 'rotary':
+      return `Enter the roundabout, take the ${ordinal(m.exit || 1)} exit onto ${name}`;
+    case 'exit roundabout':
+    case 'exit rotary':
+      return `Exit the roundabout onto ${name}`;
+    case 'continue':
+    case 'new name':
+    case 'use lane':
+    default:
+      return `Continue onto ${name}`;
+  }
+}
+
+function buildDirections(legs, orderedPoints) {
+  const lines = []; // {text, dist, isStopMarker}
+  legs.forEach((leg, legIdx) => {
+    const steps = leg.steps || [];
+    steps.forEach((step, stepIdx) => {
+      const isLastStepOfLeg = stepIdx === steps.length - 1;
+      let text;
+      if (isLastStepOfLeg) {
+        const label = stopLabel(legIdx + 1, orderedPoints.length);
+        text = legIdx + 1 === orderedPoints.length - 1 ? 'Arrive at your destination' : `Arrive at ${label}`;
+      } else {
+        text = maneuverText(step);
+      }
+      lines.push({ text, dist: step.distance, isStopMarker: isLastStepOfLeg });
+    });
+  });
+  return lines;
+}
+
+function renderDirections(legs, orderedPoints) {
+  const lines = buildDirections(legs, orderedPoints);
+  const list = document.getElementById('directions-list');
+  list.innerHTML = lines.map(l => `
+    <li${l.isStopMarker ? ' class="stop-marker"' : ''}>
+      ${l.text}
+      ${l.dist > 0 ? `<span class="dist">${formatDistance(l.dist)}</span>` : ''}
+    </li>
+  `).join('');
+  document.getElementById('directions').style.display = 'flex';
+}
+
+document.getElementById('directionsClose').addEventListener('click', () => {
+  document.getElementById('directions').style.display = 'none';
+});
 
 document.getElementById('solveBtn').addEventListener('click', async () => {
   const btn = document.getElementById('solveBtn');
@@ -291,6 +406,7 @@ document.getElementById('solveBtn').addEventListener('click', async () => {
 
     clickedPoints = orderedPoints;
     redrawPins();
+    renderDirections(routeInfo.legs, orderedPoints);
 
     document.getElementById('stats').style.display = 'block';
     document.getElementById('stats').innerHTML = `
