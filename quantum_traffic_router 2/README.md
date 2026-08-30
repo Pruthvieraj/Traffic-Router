@@ -179,6 +179,48 @@ to the free public `router.project-osrm.org` demo server) lets you point
 at a self-hosted OSRM instance instead, without touching code — worth
 doing if you outgrow the demo server's fair-use limits.
 
+## The interface — what changed and why
+
+`templates/click_router.html` was reworked from a functional-but-plain
+utility page into something closer to a real product, on the theory that a
+judge's first ten seconds are visual before they're technical:
+
+- **A real design system** instead of default browser styling: a dark
+  gradient topbar, a consistent indigo/violet/cyan accent palette used for
+  every button, pin, and the route line itself, custom-skinned dropdowns
+  (the browser's default `<select>` look is gone), Google's Inter typeface,
+  and frosted-glass ("backdrop-blur") cards for the hint, stats, directions,
+  and error panels instead of flat white boxes.
+- **Visible loading states.** Solving used to give zero feedback until it
+  either finished or errored — now the Solve button shows a spinner and
+  walks through what's actually happening ("Computing travel times…" →
+  "Optimizing route…" → "Drawing route…"), so a slow OSRM response reads as
+  "working" instead of "frozen."
+- **The route draws itself in**, animating along the real street geometry
+  over about a second, followed by a small marker that travels the full
+  route — a deliberate "the optimizer just computed this" moment rather
+  than a polyline appearing instantly.
+- **A visible naive-vs-optimized comparison.** When the optimized order
+  differs meaningfully from the as-clicked order, the app now also fetches
+  and draws the naive route as a faded dashed line underneath the solid
+  optimized one, with a small legend — so the `savings_vs_naive_pct` number
+  in the stats panel is something you can actually *see* on the map, not
+  just a claim in text.
+- **Editable pins.** Stop markers are now draggable (drag to reposition,
+  then re-solve) and clickable-to-remove (no more all-or-nothing "Clear
+  points" for a single misplaced stop), each with a small drop-in animation
+  when placed.
+- **Mobile-usable layout.** Panels reflow to full-width and stack sensibly
+  under ~860px width instead of overlapping.
+- **Small credibility details:** an info icon next to the method selector
+  explaining in plain language what "quantum-inspired" actually means
+  (simulated annealing on a QUBO, on classical hardware — not real quantum
+  hardware), and a "Quantum-inspired" badge in the header.
+
+None of this changes what the app computes — it's the same OSRM +
+congestion-model + QUBO pipeline described above. It changes whether a
+judge experiences it as a hackathon prototype or a finished product.
+
 ## Deploy to the cloud (a live URL, no laptop needed)
 
 There are two genuinely different things people mean by "put it on the

@@ -95,20 +95,30 @@ def apply_congestion_to_matrix(W: np.ndarray, hour: float, seed: int = 42) -> np
     a live traffic sensor feed. The honest upgrade path to real-time
     traffic is a paid provider (Google/TomTom/HERE/Mapbox traffic-aware
     routing) — see the README's production-path notes.
+
+    Performance note: this used to be a pure-Python double loop calling
+    random.Random(hash(...)) once per (i, j) pair — O(n^2) Python-level
+    hashing/RNG-construction calls, which starts to show up once n
+    approaches MAX_STOPS (40, i.e. up to ~1,600 pairs per solve). It's
+    vectorized with a single seeded numpy Generator instead: same
+    (seed, hour) still reproduces the exact same congested matrix every
+    time (test_congestion.py checks this), it's just built with array ops
+    instead of a Python-level loop.
     """
     n = W.shape[0]
     city_multiplier = rush_hour_multiplier(hour)
-    Wc = W.astype(float).copy()
-    for i in range(n):
-        for j in range(n):
-            if i == j:
-                continue
-            # hash() of a tuple of ints/floats is stable across runs (hash
-            # randomization only salts str/bytes/datetime, not numbers), so
-            # this stays deterministic and reproducible run to run.
-            rng = random.Random(hash((seed, i, j, round(hour, 2))))
-            per_pair_noise = rng.uniform(0.85, 1.25)
-            Wc[i, j] = W[i, j] * city_multiplier * per_pair_noise
+
+    # A single seeded Generator, derived from (seed, hour) so the same
+    # inputs always reproduce the same noise pattern. numpy's Generator
+    # needs a non-negative integer seed, and Python's hash() can be
+    # negative, so we fold it into an unsigned 32-bit value.
+    seed_value = hash((seed, round(hour, 2))) & 0xFFFFFFFF
+    rng = np.random.default_rng(seed_value)
+    noise = rng.uniform(0.85, 1.25, size=(n, n))
+
+    diag = np.diag(W).copy()  # travel time from a point to itself (always 0 in practice)
+    Wc = W.astype(float) * city_multiplier * noise
+    np.fill_diagonal(Wc, diag)  # never apply congestion noise to the diagonal
     return Wc
 
 

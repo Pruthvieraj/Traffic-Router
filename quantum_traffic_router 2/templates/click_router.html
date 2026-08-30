@@ -4,83 +4,232 @@
 <meta charset="utf-8">
 <title>Click-Anywhere Route Optimizer</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%236366f1'/%3E%3Ccircle cx='12' cy='12' r='2.3' fill='%2322d3ee'/%3E%3Cellipse cx='12' cy='12' rx='9' ry='3.6' fill='none' stroke='%2322d3ee' stroke-width='1.3'/%3E%3Cellipse cx='12' cy='12' rx='9' ry='3.6' fill='none' stroke='%2322d3ee' stroke-width='1.3' transform='rotate(60 12 12)'/%3E%3Cellipse cx='12' cy='12' rx='9' ry='3.6' fill='none' stroke='%2322d3ee' stroke-width='1.3' transform='rotate(120 12 12)'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>{{ leaflet_css|safe }}</style>
 <script>{{ leaflet_js|safe }}</script>
 <style>
-  html, body { margin:0; padding:0; height:100%; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-  #map { position:absolute; top:64px; bottom:0; left:0; right:0; cursor: crosshair; }
+  :root {
+    --accent-1: #6366f1;
+    --accent-2: #8b5cf6;
+    --accent-cyan: #22d3ee;
+    --success: #10b981;
+    --warn: #f97316;
+    --danger: #ef4444;
+    --ink: #0f172a;
+    --ink-soft: #475569;
+    --muted: #8ba0b5;
+    --panel-bg: rgba(255, 255, 255, 0.92);
+    --panel-border: rgba(255, 255, 255, 0.6);
+    --radius: 14px;
+    --shadow: 0 10px 32px rgba(15, 23, 42, 0.16), 0 1px 4px rgba(15, 23, 42, 0.08);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: 'Inter', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    color: var(--ink);
+  }
+  #map { position: absolute; top: 68px; bottom: 0; left: 0; right: 0; cursor: crosshair; }
+
+  /* ---------- Topbar ---------- */
   #topbar {
-    height:64px; display:flex; align-items:center; gap:10px; padding:0 16px;
-    background:#1b2733; color:white; box-sizing:border-box; flex-wrap:wrap;
+    height: 68px; display: flex; align-items: center; gap: 8px; padding: 0 18px;
+    background: linear-gradient(120deg, #0b1220 0%, #161233 55%, #1b1442 100%);
+    color: white; box-sizing: border-box; flex-wrap: wrap;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    position: relative; z-index: 900;
   }
-  #topbar h1 { font-size:15px; margin:0; font-weight:600; white-space:nowrap; }
-  #topbar select, #topbar button, #topbar input {
-    font-size:13px; padding:6px 10px; border-radius:6px; border:1px solid #46586b;
-    background:#26374a; color:white; cursor:pointer;
+  #brand { display: flex; align-items: center; gap: 9px; margin-right: 6px; }
+  #brand svg { color: var(--accent-cyan); flex-shrink: 0; }
+  #brand h1 { font-size: 14.5px; margin: 0; font-weight: 700; white-space: nowrap; letter-spacing: 0.1px; }
+  #brand .badge {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
+    background: linear-gradient(120deg, var(--accent-1), var(--accent-2));
+    color: white; padding: 2.5px 7px; border-radius: 20px; white-space: nowrap;
   }
-  #searchWrap { position:relative; }
-  #searchWrap input { cursor:text; width:220px; }
-  #searchWrap input::placeholder { color:#8ba0b5; }
+  .divider { width: 1px; height: 26px; background: rgba(255, 255, 255, 0.14); margin: 0 2px; flex-shrink: 0; }
+
+  #topbar select, #topbar button {
+    font-family: inherit; font-size: 12.5px; font-weight: 500; padding: 8px 28px 8px 12px;
+    border-radius: 9px; border: 1px solid rgba(255, 255, 255, 0.14);
+    background-color: #1b2740; color: #e6ecf5; cursor: pointer;
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238ba0b5' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+    transition: border-color 0.15s ease, transform 0.1s ease;
+  }
+  #topbar select:hover { border-color: rgba(255, 255, 255, 0.32); }
+  #topbar select:focus { outline: none; border-color: var(--accent-cyan); }
+
+  .method-wrap { display: flex; align-items: center; gap: 5px; }
+  .info-icon {
+    width: 17px; height: 17px; border-radius: 50%; background: rgba(255, 255, 255, 0.12);
+    color: #b9c6d6; font-size: 11px; font-style: normal; display: inline-flex; align-items: center;
+    justify-content: center; cursor: help; flex-shrink: 0; user-select: none;
+  }
+  .info-icon:hover { background: var(--accent-1); color: white; }
+
+  #searchWrap { position: relative; }
+  #searchWrap input {
+    font-family: inherit; cursor: text; width: 230px; font-size: 12.5px; padding: 8px 12px 8px 32px;
+    border-radius: 9px; border: 1px solid rgba(255, 255, 255, 0.14); background-color: #1b2740;
+    color: #e6ecf5; transition: border-color 0.15s ease, width 0.15s ease;
+  }
+  #searchWrap input:focus { outline: none; border-color: var(--accent-cyan); width: 260px; }
+  #searchWrap input::placeholder { color: var(--muted); }
+  #searchWrap::before {
+    content: ''; position: absolute; left: 11px; top: 50%; width: 13px; height: 13px;
+    transform: translateY(-50%); pointer-events: none; opacity: 0.55;
+    background: no-repeat center / contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.4'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M21 21l-4.35-4.35' stroke-linecap='round'/%3E%3C/svg%3E");
+  }
   #suggestions {
-    position:absolute; top:38px; left:0; width:320px; max-height:260px; overflow-y:auto;
-    background:white; color:#1b2733; border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.35);
-    z-index:1000; display:none;
+    position: absolute; top: 42px; left: 0; width: 320px; max-height: 260px; overflow-y: auto;
+    background: white; color: var(--ink); border-radius: 10px; box-shadow: var(--shadow);
+    z-index: 1000; display: none; animation: dropIn 0.15s ease-out;
   }
   #suggestions .suggestion {
-    padding:8px 12px; font-size:12.5px; border-bottom:1px solid #eee; cursor:pointer; line-height:1.4;
+    padding: 9px 13px; font-size: 12.5px; border-bottom: 1px solid #f0f2f5; cursor: pointer; line-height: 1.4;
   }
-  #suggestions .suggestion:last-child { border-bottom:none; }
-  #suggestions .suggestion:hover { background:#f0f4f8; }
-  #topbar button:disabled { opacity:0.4; cursor:not-allowed; }
-  #topbar button.primary { background:#9b59b6; border-color:#9b59b6; }
-  #topbar button.danger { background:#c0392b; border-color:#c0392b; }
-  #topbar button.search { background:#2980b9; border-color:#2980b9; cursor:pointer; }
+  #suggestions .suggestion:last-child { border-bottom: none; }
+  #suggestions .suggestion:hover { background: #f4f2ff; }
+
+  #topbar button { color: white; font-weight: 600; }
+  #topbar button:disabled { opacity: 0.35; cursor: not-allowed; }
+  #topbar button.primary {
+    background: linear-gradient(120deg, var(--accent-1), var(--accent-2));
+    border: none; box-shadow: 0 2px 10px rgba(99, 102, 241, 0.45);
+  }
+  #topbar button.primary:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(99, 102, 241, 0.6); }
+  #topbar button.primary.loading { cursor: progress; }
+  #topbar button.danger { background: transparent; border: 1px solid rgba(239, 68, 68, 0.5); color: #ff8b8b; }
+  #topbar button.danger:hover { background: rgba(239, 68, 68, 0.15); }
+
+  .spinner {
+    display: inline-block; width: 11px; height: 11px; border: 2px solid rgba(255, 255, 255, 0.4);
+    border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite;
+    margin-right: 7px; vertical-align: -1.5px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- Floating glass panels ---------- */
+  #hint, #stats, #directions, #error, #notice {
+    background: var(--panel-bg); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--panel-border); box-shadow: var(--shadow); border-radius: var(--radius);
+  }
   #hint {
-    position:absolute; top:78px; left:50%; transform:translateX(-50%); background:white; padding:8px 16px;
-    border-radius:8px; font-size:13px; box-shadow:0 1px 6px rgba(0,0,0,.3); z-index:600; text-align:center;
-    max-width:600px;
+    position: absolute; top: 84px; left: 50%; transform: translateX(-50%); padding: 10px 18px;
+    font-size: 13px; z-index: 600; text-align: center; max-width: 620px; color: var(--ink-soft);
   }
+  #hint b { color: var(--ink); }
+
   #stats {
-    position:absolute; bottom:16px; left:16px; background:white; padding:12px 16px;
-    border-radius:8px; font-size:12px; box-shadow:0 1px 6px rgba(0,0,0,.3); z-index:500; max-width:300px; line-height:1.7;
-    display:none;
+    position: absolute; bottom: 18px; left: 18px; padding: 16px 18px; font-size: 12.5px;
+    z-index: 500; max-width: 320px; line-height: 1.6; display: none;
   }
-  #stats b { color:#1b2733; }
-  #stats .warn { color:#c0392b; font-weight:600; }
+  #stats .stats-title {
+    font-size: 13.5px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 7px;
+    margin-bottom: 10px;
+  }
+  #stats .stats-title .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+  #stats .row { display: flex; justify-content: space-between; align-items: baseline; padding: 3px 0; color: var(--ink-soft); }
+  #stats .row b { color: var(--ink); font-weight: 700; }
+  #stats .hero-time { font-size: 22px; font-weight: 800; color: var(--ink); line-height: 1.1; }
+  #stats .hero-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+  #stats .savings-pill {
+    display: inline-flex; align-items: center; gap: 5px; margin: 9px 0; padding: 5px 11px;
+    background: linear-gradient(120deg, rgba(16, 185, 129, 0.14), rgba(34, 211, 238, 0.14));
+    border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 20px; color: #067a56; font-weight: 700;
+    font-size: 12.5px; animation: pulseGlow 2.2s ease-in-out infinite;
+  }
+  @keyframes pulseGlow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.28); }
+    50% { box-shadow: 0 0 0 5px rgba(16, 185, 129, 0); }
+  }
+  #stats .legend { display: flex; gap: 14px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #eef0f3; font-size: 11px; color: var(--ink-soft); }
+  #stats .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  #stats .swatch { width: 16px; height: 3px; border-radius: 2px; display: inline-block; }
+  #stats .swatch.solid { background: var(--accent-1); }
+  #stats .swatch.dashed { background: repeating-linear-gradient(90deg, var(--warn) 0 4px, transparent 4px 8px); }
+  #stats .footnote { margin-top: 8px; padding-top: 8px; border-top: 1px solid #eef0f3; font-size: 10.5px; color: var(--muted); line-height: 1.5; }
+
   #directions {
-    position:absolute; top:78px; right:16px; width:300px; max-height:calc(100vh - 160px);
-    background:white; border-radius:8px; box-shadow:0 1px 6px rgba(0,0,0,.3); z-index:500;
-    display:none; overflow:hidden; flex-direction:column;
+    position: absolute; top: 84px; right: 18px; width: 300px; max-height: calc(100vh - 170px);
+    z-index: 500; display: none; overflow: hidden; flex-direction: column;
   }
   #directions-header {
-    padding:10px 14px; font-size:13px; font-weight:700; color:#1b2733; border-bottom:1px solid #eee;
-    display:flex; justify-content:space-between; align-items:center;
+    padding: 12px 16px; font-size: 13px; font-weight: 700; color: var(--ink);
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    display: flex; justify-content: space-between; align-items: center;
   }
   #directions-header button {
-    background:none; border:none; color:#8ba0b5; font-size:16px; cursor:pointer; padding:0 4px; line-height:1;
+    background: none; border: none; color: var(--muted); font-size: 17px; cursor: pointer;
+    padding: 0 4px; line-height: 1; border-radius: 6px;
   }
-  #directions-list { list-style:none; margin:0; padding:6px 0; overflow-y:auto; max-height:calc(100vh - 210px); }
+  #directions-header button:hover { color: var(--danger); }
+  #directions-list { list-style: none; margin: 0; padding: 6px 0; overflow-y: auto; max-height: calc(100vh - 230px); }
   #directions-list li {
-    padding:8px 14px; font-size:12.5px; color:#2c3e50; line-height:1.5; border-bottom:1px solid #f2f2f2;
+    padding: 9px 16px; font-size: 12.5px; color: #2c3e50; line-height: 1.5;
+    border-bottom: 1px solid #f2f2f2; position: relative;
   }
-  #directions-list li:last-child { border-bottom:none; }
-  #directions-list li .dist { color:#8ba0b5; font-size:11px; display:block; margin-top:2px; }
-  #directions-list li.stop-marker { background:#f7f4fb; font-weight:600; color:#7d3c98; }
-  #error {
-    position:absolute; top:78px; left:50%; transform:translateX(-50%); background:#c0392b; color:white; padding:8px 16px;
-    border-radius:8px; font-size:13px; box-shadow:0 1px 6px rgba(0,0,0,.3); z-index:600; display:none; max-width:600px; text-align:center;
+  #directions-list li:last-child { border-bottom: none; }
+  #directions-list li .dist { color: var(--muted); font-size: 11px; display: block; margin-top: 2px; }
+  #directions-list li.stop-marker {
+    background: #f6f3ff; font-weight: 700; color: #6d28d9; border-left: 3px solid var(--accent-2);
+  }
+
+  #error, #notice {
+    position: absolute; top: 84px; left: 50%; transform: translateX(-50%); padding: 9px 18px;
+    font-size: 13px; z-index: 700; display: none; max-width: 620px; text-align: center; font-weight: 600;
+  }
+  #error { color: white; background: linear-gradient(120deg, #ef4444, #dc2626); border: none; }
+  #notice { color: white; background: linear-gradient(120deg, #3b82f6, #6366f1); border: none; }
+
+  .panel-enter { animation: panelIn 0.32s cubic-bezier(.22,1,.36,1); }
+  @keyframes panelIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes dropIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* ---------- Map pins ---------- */
+  @keyframes pinDrop {
+    0% { transform: translateY(-18px) scale(0.5); opacity: 0; }
+    65% { transform: translateY(2px) scale(1.1); opacity: 1; }
+    100% { transform: translateY(0) scale(1); }
   }
   .pin-label {
-    background:#2c3e50; color:white; border-radius:50%; width:26px; height:26px;
-    text-align:center; line-height:26px; font-size:12px; font-weight:600; box-shadow:0 0 0 2px white;
+    background: linear-gradient(135deg, #334155, #1e293b); color: white; border-radius: 50%;
+    width: 28px; height: 28px; text-align: center; line-height: 28px; font-size: 12px; font-weight: 700;
+    box-shadow: 0 0 0 3px white, 0 3px 8px rgba(0, 0, 0, 0.35); cursor: pointer;
+    animation: pinDrop 0.4s cubic-bezier(.34,1.56,.64,1); transition: transform 0.15s ease;
   }
-  .pin-start { background:#27ae60; }
-  .pin-end { background:#c0392b; }
+  .pin-label:hover { transform: scale(1.18); }
+  .pin-start { background: linear-gradient(135deg, #34d399, #059669); }
+  .pin-end { background: linear-gradient(135deg, #f87171, #dc2626); }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 860px) {
+    #brand h1 { display: none; }
+    #hint { max-width: 88vw; font-size: 12px; padding: 8px 14px; top: 76px; }
+    #stats { left: 12px; right: 12px; bottom: 12px; max-width: none; }
+    #directions { left: 12px; right: 12px; width: auto; top: auto; bottom: 12px; max-height: 38vh; }
+    #directions-list { max-height: calc(38vh - 46px); }
+  }
 </style>
 </head>
 <body>
 <div id="topbar">
-  <h1>Click-Anywhere Route Optimizer</h1>
+  <div id="brand">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="2.4" fill="currentColor"/>
+      <ellipse cx="12" cy="12" rx="10" ry="4.1" stroke="currentColor" stroke-width="1.4"/>
+      <ellipse cx="12" cy="12" rx="10" ry="4.1" stroke="currentColor" stroke-width="1.4" transform="rotate(60 12 12)"/>
+      <ellipse cx="12" cy="12" rx="10" ry="4.1" stroke="currentColor" stroke-width="1.4" transform="rotate(120 12 12)"/>
+    </svg>
+    <h1>Route Optimizer</h1>
+    <span class="badge">Quantum-inspired</span>
+  </div>
+  <div class="divider"></div>
   <select id="citySelect">
     {% for c in cities %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
   </select>
@@ -88,10 +237,13 @@
     <option value="satellite">Satellite view</option>
     <option value="street">Street map</option>
   </select>
-  <select id="methodSelect">
-    <option value="quantum">Quantum-inspired (QUBO + SA)</option>
-    <option value="classical">Classical (nearest-neighbor + 2-opt)</option>
-  </select>
+  <div class="method-wrap">
+    <select id="methodSelect">
+      <option value="quantum">Quantum-inspired (QUBO + SA)</option>
+      <option value="classical">Classical (nearest-neighbor + 2-opt)</option>
+    </select>
+    <i class="info-icon" title="Quantum-inspired = simulated annealing on a QUBO formulation, run on ordinary classical hardware as a fast stand-in for a real quantum annealer — not run on real quantum hardware. Classical = a standard nearest-neighbor + 2-opt baseline for comparison.">i</i>
+  </div>
   <select id="hourSelect" title="Simulated time of day (affects estimated traffic)">
     <option value="now">Now</option>
     <option value="9">Morning peak (9 AM)</option>
@@ -99,6 +251,7 @@
     <option value="18.5">Evening peak (6:30 PM)</option>
     <option value="23">Late night (11 PM)</option>
   </select>
+  <div class="divider"></div>
   <div id="searchWrap">
     <input id="searchInput" type="text" placeholder="Search a place, address, or landmark..." autocomplete="off">
     <div id="suggestions"></div>
@@ -107,8 +260,9 @@
   <button id="clearBtn" class="danger">Clear points</button>
 </div>
 <div id="map"></div>
-<div id="hint">Click the map, or search a place above, to drop a <b>Start</b> point, then an <b>End</b> point, then any stops in between (up to {{ max_stops }} total). Routes follow real streets, powered by OSRM.</div>
+<div id="hint">Click the map, or search a place above, to drop a <b>Start</b> point, then an <b>End</b> point, then any stops in between (up to {{ max_stops }} total). Drag a pin to move it, click a pin to remove it. Routes follow real streets, powered by OSRM.</div>
 <div id="error"></div>
+<div id="notice"></div>
 <div id="stats"></div>
 <div id="directions">
   <div id="directions-header">
@@ -144,22 +298,62 @@ let routeLayer = null;    // current drawn route (polyline + numbered stops)
 function pinIcon(index, total) {
   const cls = index === 0 ? 'pin-start' : (index === total - 1 ? 'pin-end' : '');
   const label = index === 0 ? 'S' : (index === total - 1 ? 'E' : String(index));
-  return L.divIcon({ className: '', html: `<div class="pin-label ${cls}">${label}</div>` });
+  const tip = 'Drag to move · click to remove';
+  return L.divIcon({ className: '', html: `<div class="pin-label ${cls}" title="${tip}">${label}</div>` });
 }
 
 function redrawPins() {
   pointMarkers.forEach(m => map.removeLayer(m));
-  pointMarkers = clickedPoints.map((pt, i) =>
-    L.marker(pt, { icon: pinIcon(i, clickedPoints.length) }).addTo(map)
-  );
+  pointMarkers = clickedPoints.map((pt, i) => {
+    const marker = L.marker(pt, { icon: pinIcon(i, clickedPoints.length), draggable: true }).addTo(map);
+    marker.on('click', (ev) => {
+      L.DomEvent.stopPropagation(ev.originalEvent);
+      removePoint(i);
+    });
+    marker.on('dragend', () => {
+      const ll = marker.getLatLng();
+      clickedPoints[i] = [ll.lat, ll.lng];
+      invalidateRoute('Point moved — click Solve route again to update it.');
+    });
+    return marker;
+  });
   document.getElementById('solveBtn').disabled = clickedPoints.length < 2;
+}
+
+function animateIn(el) {
+  el.classList.remove('panel-enter');
+  void el.offsetWidth; // force reflow so the animation restarts every time
+  el.classList.add('panel-enter');
 }
 
 function showError(msg) {
   const el = document.getElementById('error');
   el.textContent = msg;
   el.style.display = 'block';
+  animateIn(el);
   setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+
+function showNotice(msg) {
+  const el = document.getElementById('notice');
+  el.textContent = msg;
+  el.style.display = 'block';
+  animateIn(el);
+  setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+function invalidateRoute(noticeMsg) {
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+  document.getElementById('stats').style.display = 'none';
+  document.getElementById('directions').style.display = 'none';
+  if (noticeMsg) showNotice(noticeMsg);
+}
+
+function removePoint(i) {
+  clickedPoints.splice(i, 1);
+  redrawPins();
+  invalidateRoute(clickedPoints.length >= 2 ? 'Point removed — click Solve route again.' : null);
+  if (!clickedPoints.length) document.getElementById('hint').style.display = 'block';
 }
 
 function addPoint(lat, lon) {
@@ -170,9 +364,7 @@ function addPoint(lat, lon) {
   clickedPoints.push([lat, lon]);
   redrawPins();
   document.getElementById('hint').style.display = 'none';
-  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
-  document.getElementById('stats').style.display = 'none';
-  document.getElementById('directions').style.display = 'none';
+  invalidateRoute(null);
 }
 
 map.on('click', (e) => addPoint(e.latlng.lat, e.latlng.lng));
@@ -180,9 +372,7 @@ map.on('click', (e) => addPoint(e.latlng.lat, e.latlng.lng));
 document.getElementById('clearBtn').addEventListener('click', () => {
   clickedPoints = [];
   redrawPins();
-  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
-  document.getElementById('stats').style.display = 'none';
-  document.getElementById('directions').style.display = 'none';
+  invalidateRoute(null);
   document.getElementById('hint').style.display = 'block';
 });
 
@@ -195,9 +385,7 @@ document.getElementById('citySelect').addEventListener('change', (e) => {
   map.setView(CENTERS[e.target.value], 13);
   clickedPoints = [];
   redrawPins();
-  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
-  document.getElementById('stats').style.display = 'none';
-  document.getElementById('directions').style.display = 'none';
+  invalidateRoute(null);
 });
 
 // ---------- Search with live autocomplete (OpenStreetMap Nominatim) ----------
@@ -300,6 +488,53 @@ async function osrmRoute(pointsInOrder) {
   return { latlngs, distance_km: route.distance / 1000, duration_min: route.duration / 60, legs: route.legs || [] };
 }
 
+// ---------- Route draw-in animation + a traveling marker (visual only) ----------
+
+function animateRoute(latlngs, layerGroup, color) {
+  return new Promise((resolve) => {
+    const line = L.polyline([], { color, weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }).addTo(layerGroup);
+    const total = latlngs.length;
+    const frameCount = Math.min(70, Math.max(24, total));
+    let frame = 0;
+    function step() {
+      frame++;
+      const upto = Math.min(total, Math.ceil((frame / frameCount) * total));
+      line.setLatLngs(latlngs.slice(0, Math.max(upto, 1)));
+      if (upto < total) requestAnimationFrame(step);
+      else resolve(line);
+    }
+    requestAnimationFrame(step);
+  });
+}
+
+function animateTravelingMarker(latlngs, layerGroup, durationMs) {
+  if (latlngs.length < 2) return;
+  const cum = [0];
+  for (let i = 1; i < latlngs.length; i++) {
+    cum.push(cum[i - 1] + map.distance(latlngs[i - 1], latlngs[i]));
+  }
+  const total = cum[cum.length - 1] || 1;
+  const dot = L.circleMarker(latlngs[0], {
+    radius: 6, color: '#fff', weight: 2, fillColor: '#22d3ee', fillOpacity: 1,
+  }).addTo(layerGroup);
+  const start = performance.now();
+  function frame(now) {
+    const t = Math.min(1, (now - start) / durationMs);
+    const targetDist = t * total;
+    let i = 1;
+    while (i < cum.length && cum[i] < targetDist) i++;
+    const segStart = cum[i - 1], segEnd = cum[i] !== undefined ? cum[i] : segStart;
+    const segT = segEnd > segStart ? (targetDist - segStart) / (segEnd - segStart) : 0;
+    const p0 = latlngs[i - 1], p1 = latlngs[i] || p0;
+    const lat = p0[0] + (p1[0] - p0[0]) * segT;
+    const lon = p0[1] + (p1[1] - p0[1]) * segT;
+    dot.setLatLng([lat, lon]);
+    if (t < 1) requestAnimationFrame(frame);
+    else setTimeout(() => layerGroup.removeLayer(dot), 350);
+  }
+  requestAnimationFrame(frame);
+}
+
 // ---------- Turn-by-turn directions, built from OSRM's per-step maneuver data ----------
 
 function stopLabel(idx, total) {
@@ -387,7 +622,9 @@ function renderDirections(legs, orderedPoints) {
       ${l.dist > 0 ? `<span class="dist">${formatDistance(l.dist)}</span>` : ''}
     </li>
   `).join('');
-  document.getElementById('directions').style.display = 'flex';
+  const panel = document.getElementById('directions');
+  panel.style.display = 'flex';
+  animateIn(panel);
 }
 
 document.getElementById('directionsClose').addEventListener('click', () => {
@@ -397,14 +634,15 @@ document.getElementById('directionsClose').addEventListener('click', () => {
 document.getElementById('solveBtn').addEventListener('click', async () => {
   const btn = document.getElementById('solveBtn');
   btn.disabled = true;
-  btn.textContent = 'Solving...';
+  btn.classList.add('loading');
+  btn.innerHTML = '<span class="spinner"></span>Computing travel times…';
   document.getElementById('hint').style.display = 'none';
-  const slowNotice = setTimeout(() => { btn.textContent = 'Still solving...'; }, 6000);
 
   try {
     const method = document.getElementById('methodSelect').value;
     const hourRaw = document.getElementById('hourSelect').value;
     const hour = hourRaw === 'now' ? (new Date().getHours() + new Date().getMinutes() / 60) : parseFloat(hourRaw);
+    const originalOrderPoints = clickedPoints.slice(); // keep the as-clicked order for the naive comparison overlay
 
     // 1. Real road-network FREE-FLOW travel-time matrix (browser -> OSRM).
     // "Free-flow" means no congestion at all — our own server applies a
@@ -415,6 +653,7 @@ document.getElementById('solveBtn').addEventListener('click', async () => {
 
     // 2. Solve the visiting order under simulated traffic for `hour`
     // (browser -> our server, pure math + congestion model, no maps).
+    btn.innerHTML = '<span class="spinner"></span>Optimizing route…';
     const solveResp = await fetch('/api/solve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -424,34 +663,57 @@ document.getElementById('solveBtn').addEventListener('click', async () => {
     if (!solveResp.ok) { showError(solveData.error || 'Solve failed.'); return; }
 
     // 3. Real street-following geometry for the solved order (browser -> OSRM)
+    btn.innerHTML = '<span class="spinner"></span>Drawing route…';
     const orderedPoints = solveData.order.map(i => clickedPoints[i]);
     const routeInfo = await osrmRoute(orderedPoints);
 
+    // Optional: also fetch the naive (as-clicked) route geometry, so the map
+    // can show "here's what you would have driven" faded/dashed underneath
+    // the optimized route — makes the savings number visible, not just a claim.
+    const isNaiveOrder = solveData.order.every((v, idx) => v === idx);
+    let naiveRouteInfo = null;
+    if (!isNaiveOrder && solveData.savings_vs_naive_pct > 1) {
+      try { naiveRouteInfo = await osrmRoute(originalOrderPoints); }
+      catch (e) { /* this overlay is a bonus visual, fine to skip if it fails */ }
+    }
+
     if (routeLayer) map.removeLayer(routeLayer);
     routeLayer = L.layerGroup().addTo(map);
-    L.polyline(routeInfo.latlngs, { color: '#2c3e50', weight: 5, opacity: 0.9 }).addTo(routeLayer);
+    if (naiveRouteInfo) {
+      L.polyline(naiveRouteInfo.latlngs, {
+        color: '#f97316', weight: 4, opacity: 0.5, dashArray: '2,10', lineCap: 'round',
+      }).addTo(routeLayer);
+    }
+    animateRoute(routeInfo.latlngs, routeLayer, '#6366f1')
+      .then((line) => animateTravelingMarker(routeInfo.latlngs, routeLayer, 2000));
 
     clickedPoints = orderedPoints;
     redrawPins();
     renderDirections(routeInfo.legs, orderedPoints);
 
     const clusterNote = solveData.clusters_used > 1
-      ? `<br>Solved as ${solveData.clusters_used} clusters (${clickedPoints.length} stops exceeds the single-QUBO limit)`
+      ? `Solved as ${solveData.clusters_used} clusters (${clickedPoints.length} stops exceeds the single-QUBO limit)<br>`
       : '';
-    document.getElementById('stats').style.display = 'block';
-    document.getElementById('stats').innerHTML = `
-      <b>Route found</b> (${method === 'quantum' ? 'quantum-inspired' : 'classical 2-opt'})<br>
-      Distance: <b>${routeInfo.distance_km.toFixed(1)} km</b><br>
-      Estimated drive time (${formatHour(hour)} traffic): <b>${solveData.cost_minutes} min</b><br>
-      Free-flow (no-traffic) baseline: ${solveData.free_flow_minutes} min<br>
-      <span class="warn">${solveData.savings_vs_naive_pct}% faster</span> than visiting stops in click order (${solveData.naive_order_minutes} min)<br>
-      Visiting-order solve time: ${solveData.solve_ms} ms<br>
-      Road data: real road network (OSRM); traffic: simulated time-of-day model, not live sensors${clusterNote}
+    const legendHtml = naiveRouteInfo
+      ? `<div class="legend"><span><span class="swatch solid"></span>Optimized</span><span><span class="swatch dashed"></span>Naive (as-clicked)</span></div>`
+      : '';
+    const statsEl = document.getElementById('stats');
+    statsEl.style.display = 'block';
+    statsEl.innerHTML = `
+      <div class="stats-title"><span class="dot"></span>Route found &middot; ${method === 'quantum' ? 'quantum-inspired' : 'classical 2-opt'}</div>
+      <div class="hero-label">Estimated drive time &middot; ${formatHour(hour)} traffic</div>
+      <div class="hero-time">${solveData.cost_minutes} min</div>
+      <div class="row"><span>Distance</span><b>${routeInfo.distance_km.toFixed(1)} km</b></div>
+      <div class="row"><span>Free-flow (no-traffic) baseline</span><b>${solveData.free_flow_minutes} min</b></div>
+      <div class="savings-pill">${solveData.savings_vs_naive_pct}% faster than click order (${solveData.naive_order_minutes} min)</div>
+      ${legendHtml}
+      <div class="footnote">${clusterNote}Road data: real road network (OSRM). Traffic: simulated time-of-day model, not live sensors. Solve time: ${solveData.solve_ms} ms.</div>
     `;
+    animateIn(statsEl);
   } catch (err) {
     showError(err.message || 'Request failed.');
   } finally {
-    clearTimeout(slowNotice);
+    btn.classList.remove('loading');
     btn.disabled = clickedPoints.length < 2;
     btn.textContent = 'Solve route';
   }
