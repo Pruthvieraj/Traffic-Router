@@ -22,12 +22,25 @@ def test_index_loads(client):
 
 def test_solve_valid_classical(client):
     matrix = [[0, 300, 600], [300, 0, 400], [600, 400, 0]]
-    resp = client.post("/api/solve", json={"matrix": matrix, "method": "classical"})
+    resp = client.post("/api/solve", json={"matrix": matrix, "method": "classical", "hour": 18.5})
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["order"][0] == 0
     assert data["order"][-1] == 2
     assert sorted(data["order"]) == [0, 1, 2]
+    # traffic-awareness fields must be present and sane
+    assert data["cost_minutes"] > 0
+    assert data["free_flow_minutes"] > 0
+    assert data["naive_order_minutes"] > 0
+    assert -1e-6 <= data["savings_vs_naive_pct"] <= 100
+    assert data["hour_simulated"] == pytest.approx(18.5)
+
+
+def test_solve_defaults_hour_when_not_sent(client):
+    matrix = [[0, 300, 600], [300, 0, 400], [600, 400, 0]]
+    resp = client.post("/api/solve", json={"matrix": matrix, "method": "classical"})
+    assert resp.status_code == 200
+    assert resp.get_json()["hour_simulated"] == pytest.approx(12.0)
 
 
 def test_solve_valid_quantum(client):

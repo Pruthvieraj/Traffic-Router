@@ -133,6 +133,52 @@ computation that has to run somewhere in response to each solve — a
 static HTML file can't do that on its own, even though the mapping parts
 now live entirely in the browser.
 
+**Traffic-awareness — why it used to show flat free-flow numbers, and the
+fix.** OSRM's Table/Route APIs report *free-flow* travel time only — the
+time it'd take with zero congestion, at any hour, any day. That's why an
+early version of this app could show something like "24 km, 24 minutes"
+for a route that would obviously take longer at 6:30pm — there was no
+traffic model in the loop at all, it was pure shortest-path.
+
+`/api/solve` now runs the browser's real, OSRM-derived travel-time matrix
+through `src/congestion.py`'s `apply_congestion_to_matrix()` *before*
+optimizing, and solves on the congested matrix — so the chosen route
+itself, not just the displayed number, changes when traffic is heavier
+enough to make a different stop order faster. The UI's time-of-day
+dropdown ("Morning peak", "Evening peak", "Late night", etc.) picks the
+`hour` sent with the solve request, and the stats panel shows both:
+
+- **Estimated drive time (with traffic)** — `cost_minutes`, on the
+  congested matrix, for the solved order.
+- **Free-flow (no-traffic) baseline** — `free_flow_minutes`, the same
+  solved order's time with the congestion model switched off, so you can
+  see exactly how much of the estimate is "traffic" versus "distance."
+- **% faster than naive order** — `savings_vs_naive_pct`, comparing the
+  solved order's congested cost against simply visiting the stops in the
+  order they were clicked, *under the same simulated traffic* — this is
+  the number that answers "so what did the optimizer actually save?"
+
+**Said plainly, because judges will ask:** the congestion layer
+(`rush_hour_multiplier()` — two Gaussian bumps around 9am and 6:30pm, plus
+small seeded per-pair variation so not every road is hit identically) is a
+**simulated time-of-day model, not a live traffic sensor feed** — the app
+says this directly in its own UI, right next to the numbers. The road
+*geometry* and *distances* are real (from OSRM); the *congestion* on top
+of them is a disclosed, reproducible simulation, the same honest framing
+this project has used everywhere else (see "The honest finding" below).
+The real upgrade path to live traffic is a paid provider (Google, TomTom,
+HERE, or Mapbox all sell traffic-aware routing APIs) — swapping one in
+means replacing `apply_congestion_to_matrix()`'s output with that
+provider's live congested-duration matrix; nothing else in the pipeline
+(the QUBO solver, the clustering, the savings metric) needs to change,
+because they only ever consume a travel-time matrix, not caring where its
+numbers came from.
+
+For a real deployment, `OSRM_BASE_URL` (an environment variable, defaults
+to the free public `router.project-osrm.org` demo server) lets you point
+at a self-hosted OSRM instance instead, without touching code — worth
+doing if you outgrow the demo server's fair-use limits.
+
 ## Deploy to the cloud (a live URL, no laptop needed)
 
 There are two genuinely different things people mean by "put it on the
@@ -267,12 +313,13 @@ pip install pytest
 pytest tests/ -v
 ```
 
-48 tests, covering the QUBO solver, the classical baselines, the
-clustering/scaling logic, and the live Flask endpoint (including that a
-20-stop request — which the old 10-stop limit would have rejected — now
-succeeds end-to-end). Worth running before a demo, and worth mentioning
-to judges: the "verified" claims here are checked by an actual test suite,
-not just narrated.
+53 tests, covering the QUBO solver, the classical baselines, the
+clustering/scaling logic, the congestion model, and the live Flask endpoint
+(including that a 20-stop request — which the old 10-stop limit would have
+rejected — now succeeds end-to-end, and that the traffic-awareness fields
+below come back correct for a given simulated hour). Worth running before
+a demo, and worth mentioning to judges: the "verified" claims here are
+checked by an actual test suite, not just narrated.
 
 ## Scaling past a dozen stops
 

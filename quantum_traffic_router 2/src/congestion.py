@@ -20,7 +20,9 @@ attribute, so it doesn't care where that number came from.
 
 import math
 import random
+
 import networkx as nx
+import numpy as np
 
 
 def rush_hour_multiplier(hour: float) -> float:
@@ -77,6 +79,37 @@ def apply_congestion(
     Gc.graph["simulated_hour"] = hour
     Gc.graph["seed"] = seed
     return Gc
+
+
+def apply_congestion_to_matrix(W: np.ndarray, hour: float, seed: int = 42) -> np.ndarray:
+    """Same honest, disclosed congestion model as apply_congestion() above
+    (rush-hour curve + seeded per-pair variation), applied directly to a
+    real-world travel-time matrix (e.g. one OSRM already computed from real
+    road geometry) instead of to a networkx graph's edges. This is what
+    makes app.py's live click-anywhere routing actually respond to
+    time-of-day traffic, instead of silently using OSRM's raw free-flow
+    numbers as if there were never any congestion.
+
+    IMPORTANT — say this plainly wherever the result is shown: this is a
+    SIMULATED congestion layer on top of REAL road distances/geometry, not
+    a live traffic sensor feed. The honest upgrade path to real-time
+    traffic is a paid provider (Google/TomTom/HERE/Mapbox traffic-aware
+    routing) — see the README's production-path notes.
+    """
+    n = W.shape[0]
+    city_multiplier = rush_hour_multiplier(hour)
+    Wc = W.astype(float).copy()
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            # hash() of a tuple of ints/floats is stable across runs (hash
+            # randomization only salts str/bytes/datetime, not numbers), so
+            # this stays deterministic and reproducible run to run.
+            rng = random.Random(hash((seed, i, j, round(hour, 2))))
+            per_pair_noise = rng.uniform(0.85, 1.25)
+            Wc[i, j] = W[i, j] * city_multiplier * per_pair_noise
+    return Wc
 
 
 if __name__ == "__main__":

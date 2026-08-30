@@ -92,6 +92,13 @@
     <option value="quantum">Quantum-inspired (QUBO + SA)</option>
     <option value="classical">Classical (nearest-neighbor + 2-opt)</option>
   </select>
+  <select id="hourSelect" title="Simulated time of day (affects estimated traffic)">
+    <option value="now">Now</option>
+    <option value="9">Morning peak (9 AM)</option>
+    <option value="13">Midday (1 PM)</option>
+    <option value="18.5">Evening peak (6:30 PM)</option>
+    <option value="23">Late night (11 PM)</option>
+  </select>
   <div id="searchWrap">
     <input id="searchInput" type="text" placeholder="Search a place, address, or landmark..." autocomplete="off">
     <div id="suggestions"></div>
@@ -115,6 +122,10 @@
 const CITIES = {{ cities|tojson }};
 const CENTERS = {{ centers|tojson }};
 const MAX_STOPS = {{ max_stops }};
+// Defaults to OSRM's free public demo server; a self-hosted production
+// deployment can point this elsewhere via the OSRM_BASE_URL env var —
+// see app.py and the README's production-path notes.
+const OSRM_BASE_URL = {{ osrm_base_url|tojson }};
 
 const satelliteLayer = L.tileLayer(
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -265,7 +276,7 @@ function selectSuggestion(i) {
 
 async function osrmTable(points) {
   const coordStr = points.map(p => `${p[1]},${p[0]}`).join(';');
-  const url = `https://router.project-osrm.org/table/v1/driving/${coordStr}?annotations=duration`;
+  const url = `${OSRM_BASE_URL}/table/v1/driving/${coordStr}?annotations=duration`;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Routing service returned ${resp.status}`);
   const data = await resp.json();
@@ -277,7 +288,7 @@ async function osrmTable(points) {
 
 async function osrmRoute(pointsInOrder) {
   const coordStr = pointsInOrder.map(p => `${p[1]},${p[0]}`).join(';');
-  const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson&steps=true`;
+  const url = `${OSRM_BASE_URL}/route/v1/driving/${coordStr}?overview=full&geometries=geojson&steps=true`;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Routing service returned ${resp.status}`);
   const data = await resp.json();
@@ -295,6 +306,14 @@ function stopLabel(idx, total) {
   if (idx === 0) return 'Start';
   if (idx === total - 1) return 'End';
   return `Stop ${idx}`;
+}
+
+function formatHour(hour) {
+  const h = Math.floor(hour) % 24;
+  const m = Math.round((hour - Math.floor(hour)) * 60);
+  const period = h < 12 ? 'AM' : 'PM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
 function formatDistance(m) {
@@ -384,15 +403,22 @@ document.getElementById('solveBtn').addEventListener('click', async () => {
 
   try {
     const method = document.getElementById('methodSelect').value;
+    const hourRaw = document.getElementById('hourSelect').value;
+    const hour = hourRaw === 'now' ? (new Date().getHours() + new Date().getMinutes() / 60) : parseFloat(hourRaw);
 
-    // 1. Real road-network travel-time matrix (browser -> OSRM)
+    // 1. Real road-network FREE-FLOW travel-time matrix (browser -> OSRM).
+    // "Free-flow" means no congestion at all — our own server applies a
+    // simulated time-of-day traffic model on top of this real baseline
+    // (see app.py / src/congestion.py), which is why the numbers you see
+    // after solving won't just be "distance / free-flow speed".
     const durations = await osrmTable(clickedPoints);
 
-    // 2. Solve the visiting order (browser -> our server, pure math, no maps)
+    // 2. Solve the visiting order under simulated traffic for `hour`
+    // (browser -> our server, pure math + congestion model, no maps).
     const solveResp = await fetch('/api/solve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ matrix: durations, method }),
+      body: JSON.stringify({ matrix: durations, method, hour }),
     });
     const solveData = await solveResp.json();
     if (!solveResp.ok) { showError(solveData.error || 'Solve failed.'); return; }
@@ -415,10 +441,12 @@ document.getElementById('solveBtn').addEventListener('click', async () => {
     document.getElementById('stats').style.display = 'block';
     document.getElementById('stats').innerHTML = `
       <b>Route found</b> (${method === 'quantum' ? 'quantum-inspired' : 'classical 2-opt'})<br>
-      Drive time: <b>${routeInfo.duration_min.toFixed(1)} min</b><br>
       Distance: <b>${routeInfo.distance_km.toFixed(1)} km</b><br>
+      Estimated drive time (${formatHour(hour)} traffic): <b>${solveData.cost_minutes} min</b><br>
+      Free-flow (no-traffic) baseline: ${solveData.free_flow_minutes} min<br>
+      <span class="warn">${solveData.savings_vs_naive_pct}% faster</span> than visiting stops in click order (${solveData.naive_order_minutes} min)<br>
       Visiting-order solve time: ${solveData.solve_ms} ms<br>
-      Road data: Real road network (OSRM / OpenStreetMap)${clusterNote}
+      Road data: real road network (OSRM); traffic: simulated time-of-day model, not live sensors${clusterNote}
     `;
   } catch (err) {
     showError(err.message || 'Request failed.');
