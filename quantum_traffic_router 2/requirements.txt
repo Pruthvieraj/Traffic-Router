@@ -1,0 +1,18 @@
+networkx>=3.0
+numpy>=1.24
+matplotlib>=3.7
+dimod>=0.12
+dwave-samplers>=1.8
+folium>=0.20
+flask>=3.0
+osmnx>=1.9
+gunicorn>=21.2
+
+# osmnx is what powers "click anywhere in the city" real-street routing in
+# app.py. If it fails to install or Overpass is unreachable at runtime,
+# everything still works — it automatically falls back to the bundled
+# curated landmark network (same one multi_city_map.html always uses).
+#
+# gunicorn is only needed when deploying app.py to a cloud host (Render,
+# Railway, etc.) — see the "Deploy to the cloud" section in README.md.
+# It's unused for local runs (python3 app.py uses Flask's own dev server).

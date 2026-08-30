@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html>
+<head>
+    
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css"/>
+    
+            <meta name="viewport" content="width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                #map_acbcb653f51e27584c989d683f4e7545 {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            </style>
+
+            <style>html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            </style>
+
+            <style>#map {
+                position:absolute;
+                top:0;
+                bottom:0;
+                right:0;
+                left:0;
+                }
+            </style>
+
+            <script>
+                L_NO_TOUCH = false;
+                L_DISABLE_3D = false;
+            </script>
+
+        
+</head>
+<body>
+    
+    <h3 style="position:fixed;top:10px;left:60px;z-index:9999;background:white;padding:6px 12px;border-radius:6px;">6:30pm route (before disruption)</h3>
+    
+            <div class="folium-map" id="map_acbcb653f51e27584c989d683f4e7545" ></div>
+        
+</body>
+<script>
+    
+    
+            var map_acbcb653f51e27584c989d683f4e7545 = L.map(
+                "map_acbcb653f51e27584c989d683f4e7545",
+                {
+                    center: [12.950207142857142, 77.62673571428572],
+                    crs: L.CRS.EPSG3857,
+                    ...{
+  "zoom": 12,
+  "zoomControl": true,
+  "preferCanvas": false,
+}
+
+                }
+            );
+
+            
+
+        
+    
+            var tile_layer_7dc330b353a1f471a1f2185f4ecb21b2 = L.tileLayer(
+                "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Tiles \u0026copy; Esri \u0026mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            tile_layer_7dc330b353a1f471a1f2185f4ecb21b2.addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            var tile_layer_2d64adb4b70963d4cf9cb630a2afd3c9 = L.tileLayer(
+                "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                {
+  "minZoom": 0,
+  "maxZoom": 19,
+  "maxNativeZoom": 19,
+  "noWrap": false,
+  "attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            tile_layer_2d64adb4b70963d4cf9cb630a2afd3c9.addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            var poly_line_2b9ffd19d85bb79ae25c635f79fe2218 = L.polyline(
+                [[12.9767, 77.5713], [13.0059, 77.5709]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_2b9ffd19d85bb79ae25c635f79fe2218.bindTooltip(
+                `<div>
+                     Majestic - Malleshwaram: 3.26x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_4572b16beb0e2102e727c0e94a100c9c = L.polyline(
+                [[12.9767, 77.5713], [12.9756, 77.6068]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_4572b16beb0e2102e727c0e94a100c9c.bindTooltip(
+                `<div>
+                     Majestic - MG Road: 2.54x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_528afdefe4434ddd0ea0710605e3f59d = L.polyline(
+                [[12.9767, 77.5713], [12.9308, 77.5838]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_528afdefe4434ddd0ea0710605e3f59d.bindTooltip(
+                `<div>
+                     Majestic - Jayanagar: 2.83x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_b79fb17ed1aa33ce8f23aa9d1a391368 = L.polyline(
+                [[12.9767, 77.5713], [13.0284, 77.554]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_b79fb17ed1aa33ce8f23aa9d1a391368.bindTooltip(
+                `<div>
+                     Majestic - Yeshwantpur: 2.77x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_5c54c764bcdb819611fbb2a3a592213a = L.polyline(
+                [[12.9756, 77.6068], [12.9719, 77.6412]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_5c54c764bcdb819611fbb2a3a592213a.bindTooltip(
+                `<div>
+                     MG Road - Indiranagar: 3.38x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_c73826dc0b2cbbab064169f1bedb57dd = L.polyline(
+                [[12.9756, 77.6068], [12.9611, 77.6387]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_c73826dc0b2cbbab064169f1bedb57dd.bindTooltip(
+                `<div>
+                     MG Road - Domlur: 3.31x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_115490903af3ce326bc2d25a6497f427 = L.polyline(
+                [[12.9756, 77.6068], [13.0059, 77.5709]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_115490903af3ce326bc2d25a6497f427.bindTooltip(
+                `<div>
+                     MG Road - Malleshwaram: 3.56x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_ba9b57ec3f44eb70d9a21702d6ddcca9 = L.polyline(
+                [[12.9756, 77.6068], [13.0284, 77.554]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_ba9b57ec3f44eb70d9a21702d6ddcca9.bindTooltip(
+                `<div>
+                     MG Road - Yeshwantpur: 2.61x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_d48704cc439a2493b9c245fcf6a2b97d = L.polyline(
+                [[12.9719, 77.6412], [12.9611, 77.6387]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_d48704cc439a2493b9c245fcf6a2b97d.bindTooltip(
+                `<div>
+                     Indiranagar - Domlur: 3.00x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_475e11fa7caf7ebdca5b349b6cae1937 = L.polyline(
+                [[12.9719, 77.6412], [12.9352, 77.6245]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_475e11fa7caf7ebdca5b349b6cae1937.bindTooltip(
+                `<div>
+                     Indiranagar - Koramangala: 2.54x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_7aa93499b4c03027facfb6d6e57ba562 = L.polyline(
+                [[12.9719, 77.6412], [12.9569, 77.7011]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_7aa93499b4c03027facfb6d6e57ba562.bindTooltip(
+                `<div>
+                     Indiranagar - Marathahalli: 2.77x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_822e6a85308fd78d9023786c22c6e4ed = L.polyline(
+                [[12.9719, 77.6412], [12.9698, 77.75]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_822e6a85308fd78d9023786c22c6e4ed.bindTooltip(
+                `<div>
+                     Indiranagar - Whitefield: 3.10x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_e4eb16b360c6fa7ed0d02e3212a1c043 = L.polyline(
+                [[12.9611, 77.6387], [12.9352, 77.6245]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_e4eb16b360c6fa7ed0d02e3212a1c043.bindTooltip(
+                `<div>
+                     Domlur - Koramangala: 2.54x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_9dbd696769703ea42d0b4d7c92fee4f2 = L.polyline(
+                [[12.9611, 77.6387], [12.9569, 77.7011]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_9dbd696769703ea42d0b4d7c92fee4f2.bindTooltip(
+                `<div>
+                     Domlur - Marathahalli: 2.74x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_6ed3ad79793e5cdb8656800c166a98c8 = L.polyline(
+                [[12.9611, 77.6387], [12.9698, 77.75]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_6ed3ad79793e5cdb8656800c166a98c8.bindTooltip(
+                `<div>
+                     Domlur - Whitefield: 3.27x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_d0c26764f49b6d845eb7ca16c4a6e5d4 = L.polyline(
+                [[12.9352, 77.6245], [12.9172, 77.6228]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_d0c26764f49b6d845eb7ca16c4a6e5d4.bindTooltip(
+                `<div>
+                     Koramangala - Silk Board: 3.15x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_ce6632926754923a3b66aeff4f06523a = L.polyline(
+                [[12.9352, 77.6245], [12.9166, 77.6101]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_ce6632926754923a3b66aeff4f06523a.bindTooltip(
+                `<div>
+                     Koramangala - BTM Layout: 2.77x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_109568d8d496d2330bb9b072acc43d54 = L.polyline(
+                [[12.9352, 77.6245], [12.9116, 77.6389]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_109568d8d496d2330bb9b072acc43d54.bindTooltip(
+                `<div>
+                     Koramangala - HSR Layout: 3.20x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_38443bcba631ebc3b1ca55d81c1a503c = L.polyline(
+                [[12.9352, 77.6245], [12.9308, 77.5838]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_38443bcba631ebc3b1ca55d81c1a503c.bindTooltip(
+                `<div>
+                     Koramangala - Jayanagar: 3.46x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_f43a972f923598414823137fcd9481a3 = L.polyline(
+                [[12.9116, 77.6389], [12.9172, 77.6228]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_f43a972f923598414823137fcd9481a3.bindTooltip(
+                `<div>
+                     HSR Layout - Silk Board: 2.52x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_1ecd274f854ea3da7c1cd1985354a5bb = L.polyline(
+                [[12.9116, 77.6389], [12.9166, 77.6101]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_1ecd274f854ea3da7c1cd1985354a5bb.bindTooltip(
+                `<div>
+                     HSR Layout - BTM Layout: 3.46x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_699066c803c7b01a0daa5202ad9ee9a2 = L.polyline(
+                [[12.9116, 77.6389], [12.8452, 77.6602]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_699066c803c7b01a0daa5202ad9ee9a2.bindTooltip(
+                `<div>
+                     HSR Layout - Electronic City: 3.33x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_e72f15d57ebf819aef219408f04cca14 = L.polyline(
+                [[12.9166, 77.6101], [12.9172, 77.6228]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_e72f15d57ebf819aef219408f04cca14.bindTooltip(
+                `<div>
+                     BTM Layout - Silk Board: 2.91x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_c44102536fc36857081bc34c35da9053 = L.polyline(
+                [[12.9166, 77.6101], [12.9308, 77.5838]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_c44102536fc36857081bc34c35da9053.bindTooltip(
+                `<div>
+                     BTM Layout - Jayanagar: 2.69x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_c28cbcace54b95f0a2e673e30f17410d = L.polyline(
+                [[12.9166, 77.6101], [12.8452, 77.6602]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_c28cbcace54b95f0a2e673e30f17410d.bindTooltip(
+                `<div>
+                     BTM Layout - Electronic City: 3.64x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_4d0d97ada4427d8acb308903caac8db0 = L.polyline(
+                [[12.9308, 77.5838], [12.9172, 77.6228]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_4d0d97ada4427d8acb308903caac8db0.bindTooltip(
+                `<div>
+                     Jayanagar - Silk Board: 2.90x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_813a72c35130a23754ab06d2ac782391 = L.polyline(
+                [[13.0059, 77.5709], [13.0284, 77.554]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_813a72c35130a23754ab06d2ac782391.bindTooltip(
+                `<div>
+                     Malleshwaram - Yeshwantpur: 2.62x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_bd0c90bb94bf51a7dd362e2482a5f72b = L.polyline(
+                [[12.9569, 77.7011], [12.9698, 77.75]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_bd0c90bb94bf51a7dd362e2482a5f72b.bindTooltip(
+                `<div>
+                     Marathahalli - Whitefield: 2.62x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_6f61a0195b5bdbe7aac4fe527522d1cb = L.polyline(
+                [[12.8452, 77.6602], [12.9172, 77.6228]],
+                {"bubblingMouseEvents": true, "color": "#e74c3c", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#e74c3c", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.5, "smoothFactor": 1.0, "stroke": true, "weight": 3}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            poly_line_6f61a0195b5bdbe7aac4fe527522d1cb.bindTooltip(
+                `<div>
+                     Electronic City - Silk Board: 3.51x congestion
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_cd1a39bf8479a783d8259a6cd05a41e9 = L.polyline(
+                [[12.9719, 77.6412], [12.9352, 77.6245], [12.9116, 77.6389], [12.9172, 77.6228], [12.9308, 77.5838], [12.9767, 77.5713], [12.9719, 77.6412]],
+                {"bubblingMouseEvents": true, "color": "#2c3e50", "dashArray": "8,6", "dashOffset": null, "fill": false, "fillColor": "#2c3e50", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.9, "smoothFactor": 1.0, "stroke": true, "weight": 5}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            var marker_98434c81ab00c9d7439ab4aab616249e = L.marker(
+                [12.9719, 77.6412],
+                {
+}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            var div_icon_726d249b05f2bbce7ff45e4160043736 = L.divIcon({
+  "html": "\u003cdiv style=\"font-size:12pt;color:white;background:#2c3e50;\n                border-radius:50%;width:24px;height:24px;text-align:center;line-height:24px;\"\u003e1\u003c/div\u003e",
+  "className": "empty",
+});
+        
+    
+            marker_98434c81ab00c9d7439ab4aab616249e.bindTooltip(
+                `<div>
+                     Indiranagar
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+                marker_98434c81ab00c9d7439ab4aab616249e.setIcon(div_icon_726d249b05f2bbce7ff45e4160043736);
+            
+    
+            var marker_07707d28a04d1d43da2d115f27afb544 = L.marker(
+                [12.9352, 77.6245],
+                {
+}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            var div_icon_ff74e912b5d3e03ef67d51c282cc49b8 = L.divIcon({
+  "html": "\u003cdiv style=\"font-size:12pt;color:white;background:#2c3e50;\n                border-radius:50%;width:24px;height:24px;text-align:center;line-height:24px;\"\u003e2\u003c/div\u003e",
+  "className": "empty",
+});
+        
+    
+            marker_07707d28a04d1d43da2d115f27afb544.bindTooltip(
+                `<div>
+                     Koramangala
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+                marker_07707d28a04d1d43da2d115f27afb544.setIcon(div_icon_ff74e912b5d3e03ef67d51c282cc49b8);
+            
+    
+            var marker_4966eeca302b319d41649171d632bb17 = L.marker(
+                [12.9116, 77.6389],
+                {
+}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            var div_icon_a336ecd78dff66647272c6b83c92419f = L.divIcon({
+  "html": "\u003cdiv style=\"font-size:12pt;color:white;background:#2c3e50;\n                border-radius:50%;width:24px;height:24px;text-align:center;line-height:24px;\"\u003e3\u003c/div\u003e",
+  "className": "empty",
+});
+        
+    
+            marker_4966eeca302b319d41649171d632bb17.bindTooltip(
+                `<div>
+                     HSR Layout
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+                marker_4966eeca302b319d41649171d632bb17.setIcon(div_icon_a336ecd78dff66647272c6b83c92419f);
+            
+    
+            var marker_51fd8fcf9eaa5a4f4a05c3c7bde36681 = L.marker(
+                [12.9172, 77.6228],
+                {
+}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            var div_icon_f19a78e189b82db4fd32e4d535652701 = L.divIcon({
+  "html": "\u003cdiv style=\"font-size:12pt;color:white;background:#2c3e50;\n                border-radius:50%;width:24px;height:24px;text-align:center;line-height:24px;\"\u003e4\u003c/div\u003e",
+  "className": "empty",
+});
+        
+    
+            marker_51fd8fcf9eaa5a4f4a05c3c7bde36681.bindTooltip(
+                `<div>
+                     Silk Board
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+                marker_51fd8fcf9eaa5a4f4a05c3c7bde36681.setIcon(div_icon_f19a78e189b82db4fd32e4d535652701);
+            
+    
+            var marker_64ec1e5b6b2baa5e01ea36399427cb40 = L.marker(
+                [12.9308, 77.5838],
+                {
+}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            var div_icon_4c4dd836703902634d3cd21650fc1fc0 = L.divIcon({
+  "html": "\u003cdiv style=\"font-size:12pt;color:white;background:#2c3e50;\n                border-radius:50%;width:24px;height:24px;text-align:center;line-height:24px;\"\u003e5\u003c/div\u003e",
+  "className": "empty",
+});
+        
+    
+            marker_64ec1e5b6b2baa5e01ea36399427cb40.bindTooltip(
+                `<div>
+                     Jayanagar
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+                marker_64ec1e5b6b2baa5e01ea36399427cb40.setIcon(div_icon_4c4dd836703902634d3cd21650fc1fc0);
+            
+    
+            var marker_a2389829e22f588fb080f381adc70770 = L.marker(
+                [12.9767, 77.5713],
+                {
+}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+        
+    
+            var div_icon_a5bad56adfee7042b55e0b8fb82633a9 = L.divIcon({
+  "html": "\u003cdiv style=\"font-size:12pt;color:white;background:#2c3e50;\n                border-radius:50%;width:24px;height:24px;text-align:center;line-height:24px;\"\u003e6\u003c/div\u003e",
+  "className": "empty",
+});
+        
+    
+            marker_a2389829e22f588fb080f381adc70770.bindTooltip(
+                `<div>
+                     Majestic
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+                marker_a2389829e22f588fb080f381adc70770.setIcon(div_icon_a5bad56adfee7042b55e0b8fb82633a9);
+            
+    
+            var layer_control_2ad1474531854bc9f7aa710708d8e202_layers = {
+                base_layers : {
+                    "Satellite" : tile_layer_7dc330b353a1f471a1f2185f4ecb21b2,
+                    "Street map" : tile_layer_2d64adb4b70963d4cf9cb630a2afd3c9,
+                },
+                overlays :  {
+                },
+            };
+            let layer_control_2ad1474531854bc9f7aa710708d8e202 = L.control.layers(
+                layer_control_2ad1474531854bc9f7aa710708d8e202_layers.base_layers,
+                layer_control_2ad1474531854bc9f7aa710708d8e202_layers.overlays,
+                {
+  "position": "topright",
+  "collapsed": false,
+  "autoZIndex": true,
+}
+            ).addTo(map_acbcb653f51e27584c989d683f4e7545);
+
+        
+</script>
+</html>
