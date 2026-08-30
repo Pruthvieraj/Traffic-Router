@@ -251,6 +251,51 @@ The pipeline:
    from truly optimal" each method gets.
 6. **`src/benchmark.py`** + **`src/visualize.py`** — runs the two
    experiments below and produces the charts and report.
+7. **`src/clustering.py`** — scales the fixed-endpoint solver past what a
+   single QUBO can handle (see "Scaling past a dozen stops" below).
+
+## Automated tests
+
+`tests/` has a pytest suite that enforces, in CI, the correctness claims
+this README makes in prose rather than leaving them as one-time manual
+checks — including the exact "verified against brute-force-optimal on
+random trials" property claimed for the open-path solver below. Run it
+with:
+
+```
+pip install pytest
+pytest tests/ -v
+```
+
+48 tests, covering the QUBO solver, the classical baselines, the
+clustering/scaling logic, and the live Flask endpoint (including that a
+20-stop request — which the old 10-stop limit would have rejected — now
+succeeds end-to-end). Worth running before a demo, and worth mentioning
+to judges: the "verified" claims here are checked by an actual test suite,
+not just narrated.
+
+## Scaling past a dozen stops
+
+The open-path QUBO's variable count grows with the *square* of the number
+of interior stops, so a single QUBO stays fast and exact up to about a
+dozen stops but doesn't scale indefinitely — a real dispatch route can
+easily have 20-50 stops in a day. `src/clustering.py` implements the
+standard "cluster-first, route-second" strategy real Vehicle Routing
+Problem systems use at this scale: stops are split into small groups
+(clustered directly on the travel-time matrix — no coordinates needed),
+each group's visiting order is solved *exactly* with the same
+brute-force-verified solver used everywhere else in this project, and the
+groups are stitched together start-to-end.
+
+`app.py`'s `/api/solve` now accepts up to `MAX_STOPS = 40` (up from 10)
+via this path — below `CLUSTER_SIZE` (9) interior stops it's an exact
+passthrough with identical behavior to before; above it, the response
+includes `clusters_used > 1` and the UI's stats panel says so, honestly.
+This is a **heuristic decomposition, not a guarantee of the global
+optimum** above the threshold — worth saying plainly to judges, because
+exact optimization of a 50-stop TSP is intractable for classical and
+quantum approaches alike, and every real routing system at that scale
+makes the same trade.
 
 ## The honest finding — please read this before pitching it
 
@@ -296,6 +341,27 @@ classical local-search heuristics to violate such constraints and require
 costly post-hoc repair.** That is a "concrete, measurable technical
 effect" in the sense the 2025 CRI patent guidelines require — see the main
 research report for the full patentability discussion.
+
+## Real quantum hardware validation (optional, but a strong differentiator)
+
+Every result described above — and everything the live app actually uses
+— solves the QUBO with classical simulated annealing standing in for a
+quantum annealer ("quantum-inspired"). That's an honest and defensible
+foundation, but it's also what almost every other "quantum" SIH project
+does, because it's free and needs no special access.
+
+`run_on_real_quantum_hardware.py` takes the exact same QUBO
+(`qubo_tsp.build_open_path_bqm` — the fixed-start/fixed-end formulation
+the live app uses) and submits it to an actual D-Wave quantum annealer via
+a free Leap cloud account, then prints/saves a side-by-side comparison
+against brute-force-optimal, classical 2-opt, and the simulated-annealing
+version. It needs a one-time free signup (no credit card) and `pip install
+dwave-system` — full steps are in the script's own docstring. This is a
+pitch-deck artifact (a real QPU chip ID, a real hardware timing number, a
+real hardware result), not part of the live demo's normal code path — run
+it once, save `output/real_quantum_hardware_result.md`, and quote or
+screenshot it when a judge asks "is this actually quantum, or just named
+that."
 
 ## How to pitch this at your internal round / to SIH judges
 

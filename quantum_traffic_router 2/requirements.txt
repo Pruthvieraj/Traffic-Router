@@ -16,3 +16,13 @@ gunicorn>=21.2
 # gunicorn is only needed when deploying app.py to a cloud host (Render,
 # Railway, etc.) — see the "Deploy to the cloud" section in README.md.
 # It's unused for local runs (python3 app.py uses Flask's own dev server).
+#
+# dwave-system is NOT listed above on purpose — it's only needed if you
+# run run_on_real_quantum_hardware.py (a one-time pitch-deck credibility
+# script, not part of the app). Install it separately when you want that:
+#     pip install dwave-system
+#
+# pytest is also NOT listed above — it's a dev-only tool for running the
+# tests/ suite, not something the app or a deploy needs. Install it
+# separately to run tests:
+#     pip install pytest && pytest tests/ -v

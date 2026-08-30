@@ -47,13 +47,19 @@ from flask import Flask, request, jsonify, render_template
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from city_graph import list_cities, _city_center  # noqa: E402  (just city names + map centers, no network calls)
-from qubo_tsp import solve_open_path_quantum_inspired  # noqa: E402
-from baseline import nearest_neighbor_2opt_open_path  # noqa: E402
+from clustering import solve_open_path_scalable  # noqa: E402
 from build_multi_city_map import load_inline_leaflet  # noqa: E402
 
 app = Flask(__name__)
 
-MAX_STOPS = 10  # keeps the QUBO solve fast (N^2 binary variables) for a live in-browser demo
+# A single QUBO stays exact and fast up to about a dozen stops (its variable
+# count grows with the square of the interior stop count). Past that,
+# solve_open_path_scalable() automatically clusters stops into groups of
+# CLUSTER_SIZE and solves each group exactly, stitching the results — see
+# src/clustering.py. MAX_STOPS is a live-demo-speed ceiling, not a hard
+# QUBO limit; raise it further if you're comfortable with slower solves.
+MAX_STOPS = 40
+CLUSTER_SIZE = 9
 
 _LEAFLET_CSS, _LEAFLET_JS = load_inline_leaflet()
 
@@ -66,6 +72,7 @@ def index():
         centers={c: list(_city_center(c)) for c in list_cities()},
         leaflet_css=_LEAFLET_CSS,
         leaflet_js=_LEAFLET_JS,
+        max_stops=MAX_STOPS,
     )
 
 
@@ -94,20 +101,18 @@ def solve():
         W = np.array(matrix, dtype=float) / 60.0
         start_idx, end_idx = 0, n - 1
 
-        if method == "classical":
-            result = nearest_neighbor_2opt_open_path(W, start_idx, end_idx)
-        else:
-            # num_reads is lower than the offline benchmark script uses —
-            # free-tier cloud CPUs (e.g. Render's 0.1 vCPU) are much slower
-            # than a laptop, and 150 reads still converges reliably for the
-            # small (<=10 stop) problems this live demo solves.
-            result = solve_open_path_quantum_inspired(W, start_idx, end_idx, num_reads=150)
+        # solve_open_path_scalable is an exact passthrough to the direct
+        # QUBO/classical solver at or below CLUSTER_SIZE interior stops, and
+        # automatically clusters-and-stitches above that — see
+        # src/clustering.py for why and how.
+        result = solve_open_path_scalable(W, start_idx, end_idx, method=method, cluster_size=CLUSTER_SIZE)
 
         return jsonify({
             "order": result["path"],
             "cost_minutes": round(result["cost"], 1),
             "method": method,
             "solve_ms": round(result.get("wall_seconds", 0) * 1000),
+            "clusters_used": result.get("clusters_used", 1),
         })
 
     except Exception as e:

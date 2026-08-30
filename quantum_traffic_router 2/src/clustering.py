@@ -1,0 +1,164 @@
+"""
+clustering.py
+==============
+Scales the fixed-start/fixed-end routing solver
+(qubo_tsp.solve_open_path_quantum_inspired / baseline.nearest_neighbor_2opt_open_path)
+past the point where a single QUBO can handle the whole problem directly.
+
+WHY THIS EXISTS: the open-path QUBO's variable count grows with the SQUARE
+of the number of interior stops ((n-2)^2 binary variables). That's fine for
+a live in-browser demo up to around a dozen stops, but a real dispatch
+route can easily have 20-50+ stops in a day. Rather than pretend a single
+QUBO scales indefinitely (it doesn't — this is a real, disclosed
+limitation, not a bug to hide), this module uses the standard
+"cluster-first, route-second" strategy real Vehicle Routing Problem (VRP)
+systems use at scale: split the stops into small groups, solve each small
+group EXACTLY with the existing, already brute-force-verified QUBO solver,
+then stitch the groups together in a sensible order.
+
+Clustering here is done directly on the travel-time matrix (not raw
+lat/lon) using a simple, deterministic farthest-point / nearest-assignment
+method — no extra dependency needed, and travel time is arguably a more
+relevant notion of "close" for a routing problem than straight-line
+geographic distance anyway.
+
+HONESTY NOTE: this is a heuristic decomposition, not a guarantee of the
+global optimum, above the cluster-size threshold — and that's a trade
+every real routing system at scale makes, because exact optimization of a
+50-stop TSP is intractable for classical and quantum approaches alike.
+Below the threshold, solve_open_path_scalable() is a pure passthrough to
+the exact solver, so nothing about the existing, tested small-N behavior
+changes at all.
+"""
+
+from __future__ import annotations
+
+import time
+
+import numpy as np
+
+from qubo_tsp import solve_open_path_quantum_inspired, open_path_length
+from baseline import nearest_neighbor_2opt_open_path
+
+
+def _cluster_indices(W: np.ndarray, indices: list[int], n_clusters: int) -> list[list[int]]:
+    """Greedy farthest-point clustering of `indices` using W as the distance
+    metric. Deterministic (no randomness) — this matters for reproducible
+    demos and tests. Not claimed to be globally optimal clustering, just a
+    fast, simple way to split stops into travel-time-coherent groups using
+    data we already have (no coordinates needed)."""
+    if n_clusters <= 1 or len(indices) <= 1:
+        return [list(indices)]
+
+    remaining = list(indices)
+    seeds = [remaining.pop(0)]  # first seed chosen deterministically, not at random
+    while len(seeds) < n_clusters and remaining:
+        far_point = max(remaining, key=lambda p: min(W[p, s] for s in seeds))
+        seeds.append(far_point)
+        remaining.remove(far_point)
+
+    clusters = {s: [s] for s in seeds}
+    for p in remaining:
+        nearest_seed = min(seeds, key=lambda s: W[p, s])
+        clusters[nearest_seed].append(p)
+    return list(clusters.values())
+
+
+def _medoid(W: np.ndarray, cluster: list[int]) -> int:
+    """The point in `cluster` with the smallest total distance to every
+    other point in the same cluster — used to represent that cluster when
+    deciding the order clusters are visited in."""
+    if len(cluster) == 1:
+        return cluster[0]
+    return min(cluster, key=lambda p: sum(W[p, q] for q in cluster if q != p))
+
+
+def solve_open_path_scalable(
+    W: np.ndarray, start_idx: int, end_idx: int, method: str = "quantum", cluster_size: int = 9,
+) -> dict:
+    """Same return shape as qubo_tsp.solve_open_path_quantum_inspired /
+    baseline.nearest_neighbor_2opt_open_path — {"path", "cost",
+    "wall_seconds", ...} — plus a "clusters_used" field for transparency.
+
+    For n <= cluster_size + 2 (i.e. the interior stop count already fits in
+    one QUBO), this is an exact passthrough to the direct solver — identical
+    results to calling it yourself. Above that, interior stops are split
+    into clusters of at most `cluster_size` stops each, each cluster's
+    visiting order is solved exactly, and the clusters are stitched
+    together start-to-end.
+    """
+    t0 = time.perf_counter()
+    n = W.shape[0]
+    middle = [v for v in range(n) if v not in (start_idx, end_idx)]
+
+    def _solve_small(w, s, e):
+        if method == "classical":
+            return nearest_neighbor_2opt_open_path(w, s, e)
+        return solve_open_path_quantum_inspired(w, s, e)
+
+    if len(middle) <= cluster_size:
+        result = _solve_small(W, start_idx, end_idx)
+        result["clusters_used"] = 1
+        result["wall_seconds"] = time.perf_counter() - t0
+        return result
+
+    n_clusters = -(-len(middle) // cluster_size)  # ceil division
+    clusters = _cluster_indices(W, middle, n_clusters)
+    medoids = {i: _medoid(W, c) for i, c in enumerate(clusters)}
+
+    start_cluster = min(medoids, key=lambda i: W[start_idx, medoids[i]])
+    end_candidates = [i for i in medoids if i != start_cluster] or [start_cluster]
+    end_cluster = min(end_candidates, key=lambda i: W[end_idx, medoids[i]])
+
+    pool = [i for i in medoids if i not in (start_cluster, end_cluster)]
+    order = [start_cluster]
+    current = start_cluster
+    while pool:
+        nxt = min(pool, key=lambda i: W[medoids[current], medoids[i]])
+        order.append(nxt)
+        pool.remove(nxt)
+        current = nxt
+    if end_cluster != start_cluster:
+        order.append(end_cluster)
+
+    full_path = [start_idx]
+    current_point = start_idx
+
+    for pos, cid in enumerate(order):
+        pts = list(clusters[cid])
+        is_last = pos == len(order) - 1
+
+        entry = min(pts, key=lambda p: W[current_point, p])
+        rest = [p for p in pts if p != entry]
+
+        if is_last:
+            exit_point = end_idx
+            interior = rest
+        elif rest:
+            next_medoid = medoids[order[pos + 1]]
+            exit_point = min(rest, key=lambda p: W[p, next_medoid])
+            interior = [p for p in rest if p != exit_point]
+        else:
+            exit_point = entry
+            interior = []
+
+        if entry == exit_point:
+            sub_path = [entry]
+        else:
+            local_ids = [entry] + interior + [exit_point]
+            sub_W = W[np.ix_(local_ids, local_ids)]
+            sub = _solve_small(sub_W, 0, len(local_ids) - 1)
+            sub_path = [local_ids[i] for i in sub["path"]]
+
+        full_path.extend(sub_path)
+        current_point = sub_path[-1]
+
+    if full_path[-1] != end_idx:
+        full_path.append(end_idx)
+
+    return {
+        "path": full_path,
+        "cost": open_path_length(full_path, W),
+        "wall_seconds": time.perf_counter() - t0,
+        "clusters_used": len(clusters),
+    }

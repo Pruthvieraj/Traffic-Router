@@ -100,7 +100,7 @@
   <button id="clearBtn" class="danger">Clear points</button>
 </div>
 <div id="map"></div>
-<div id="hint">Click the map, or search a place above, to drop a <b>Start</b> point, then an <b>End</b> point, then any stops in between (up to 10 total). Routes follow real streets, powered by OSRM.</div>
+<div id="hint">Click the map, or search a place above, to drop a <b>Start</b> point, then an <b>End</b> point, then any stops in between (up to {{ max_stops }} total). Routes follow real streets, powered by OSRM.</div>
 <div id="error"></div>
 <div id="stats"></div>
 <div id="directions">
@@ -114,6 +114,7 @@
 <script>
 const CITIES = {{ cities|tojson }};
 const CENTERS = {{ centers|tojson }};
+const MAX_STOPS = {{ max_stops }};
 
 const satelliteLayer = L.tileLayer(
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -151,8 +152,8 @@ function showError(msg) {
 }
 
 function addPoint(lat, lon) {
-  if (clickedPoints.length >= 10) {
-    showError('Max 10 points for a live demo-speed solve — clear and start over if you need more.');
+  if (clickedPoints.length >= MAX_STOPS) {
+    showError(`Max ${MAX_STOPS} points for a live demo-speed solve — clear and start over if you need more.`);
     return;
   }
   clickedPoints.push([lat, lon]);
@@ -408,13 +409,16 @@ document.getElementById('solveBtn').addEventListener('click', async () => {
     redrawPins();
     renderDirections(routeInfo.legs, orderedPoints);
 
+    const clusterNote = solveData.clusters_used > 1
+      ? `<br>Solved as ${solveData.clusters_used} clusters (${clickedPoints.length} stops exceeds the single-QUBO limit)`
+      : '';
     document.getElementById('stats').style.display = 'block';
     document.getElementById('stats').innerHTML = `
       <b>Route found</b> (${method === 'quantum' ? 'quantum-inspired' : 'classical 2-opt'})<br>
       Drive time: <b>${routeInfo.duration_min.toFixed(1)} min</b><br>
       Distance: <b>${routeInfo.distance_km.toFixed(1)} km</b><br>
       Visiting-order solve time: ${solveData.solve_ms} ms<br>
-      Road data: Real road network (OSRM / OpenStreetMap)
+      Road data: Real road network (OSRM / OpenStreetMap)${clusterNote}
     `;
   } catch (err) {
     showError(err.message || 'Request failed.');
