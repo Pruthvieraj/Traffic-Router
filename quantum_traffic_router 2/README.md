@@ -79,17 +79,16 @@ The same new city entry also works for `app.py` below, since it reuses
 
 ## `app.py` — click anywhere in the city (real streets, real solve, live)
 
-Run `python3 app.py`, open `http://127.0.0.1:5000`. Click the map to drop
-a **Start** pin (green "S"), then an **End** pin (red "E"), then optionally
-more stops in between (up to 10 total) — hit **Solve route** and it:
+Run `python3 app.py`, open `http://127.0.0.1:5000`. Click the map — or
+type a place name into the search box and pick it from the live
+autocomplete suggestions — to drop a **Start** pin (green "S"), then an
+**End** pin (red "E"), then optionally more stops in between (up to 10
+total). Hit **Solve route** and it:
 
-1. Fetches (or loads from cache) a real OpenStreetMap street network for
-   the selected city — thousands of real intersections, not the dozen
-   curated landmarks `multi_city_map.html` uses.
-2. Snaps each of your clicks to the nearest real road junction, and tells
-   you how far off each click was (so an accidental click in the middle of
-   a park is visibly flagged, not silently misrouted).
-3. Solves the best visiting order with a **fixed start and fixed end**
+1. Gets a real, road-network-based travel-time matrix between all your
+   points from OSRM (a public routing engine), not a straight-line
+   estimate.
+2. Solves the best visiting order with a **fixed start and fixed end**
    (a proper A-to-B route through your stops, not a round trip back to
    start) — this is a different, harder-to-get-right QUBO formulation than
    the round-trip one everything else in this project uses (see
@@ -97,31 +96,42 @@ more stops in between (up to 10 total) — hit **Solve route** and it:
    endpoints are guaranteed correct by construction, not just penalized).
    Verified against brute-force-optimal on 20 random test cases before
    shipping — see the project's build history if you want to rerun that check.
-4. Draws the route following actual streets (the polyline is the real
-   shortest-path road geometry between each pair of stops, stitched
-   together), not straight lines between points.
+3. Draws the actual street-following route geometry for that order (again
+   via OSRM), so it curves along real roads instead of drawing straight
+   lines between points.
 
-**The one real caveat: it needs live internet, twice, for two different
-reasons.** First, fetching real street data for a city the first time (a
-few seconds; cached to `data/street_graphs/*.graphml` after that — later
-runs and later cities you've already used are instant even offline).
-Second, the satellite/street map tile images themselves, every time,
-same as `multi_city_map.html`. If Overpass (OpenStreetMap's data API) is
-unreachable — this happened in the sandbox this was built in, so the
-fallback path is real and tested, not theoretical — it automatically
-falls back to the same dozen-landmark curated network the static demo
-uses, and the stats panel tells you plainly which mode you're in ("Real
-OpenStreetMap street data" vs "Offline fallback"). In fallback mode your
-clicks snap to whichever of the ~12 landmarks is nearest, which can be
-a kilometer or more off if you click somewhere in between — genuinely
-"anywhere in the city" requires the real street data to actually be
-reachable.
+**Architecture note — why this changed from an earlier version.** The
+first version of this feature fetched OpenStreetMap street data on the
+*server* (via a Python library called osmnx, talking to OpenStreetMap's
+Overpass API). That works on a laptop but is unreliable once deployed to
+a cloud host: Overpass's operators rate-limit or block traffic from
+datacenter IP ranges to protect the service from bots, so the exact same
+code would silently fall back to a tiny curated dozen-landmark network on
+Render, producing straight-line "routes" and "nearest known road junction"
+snap warnings. The fix was to move all real road-network queries into the
+**browser** using OSRM (`router.project-osrm.org`) — the browser reaches
+it from the visitor's own ordinary internet connection, not a flagged
+datacenter IP, which is exactly how real map apps handle this. `app.py`'s
+`/api/solve` endpoint now does pure optimization on a matrix the browser
+already computed — no maps, no Overpass, nothing left to fail on a cloud
+host. (`prefetch_street_graphs.py` and the osmnx-based code in
+`src/city_graph.py` are left in the project for reference but are no
+longer used by `app.py`.)
+
+**The one remaining caveat:** this needs live internet for the map tile
+images (same as `multi_city_map.html`) and for the browser's calls to
+OSRM and to OpenStreetMap's search service. `router.project-osrm.org` is
+a free public demo instance — reliable for occasional/demo-scale use like
+a hackathon, but not a guaranteed-uptime production service, so if it's
+ever briefly unreachable the app will show a clear error (e.g. "Routing
+service returned 500") rather than pretending to succeed.
 
 **Why this needs a running server at all** (unlike the double-click-a-file
-simplicity of `multi_city_map.html`): an arbitrary click has to be matched
-against real map data and run through the solver on the spot — that's
-server-side Python work triggered per click, which a static file fundamentally
-can't do on its own.
+simplicity of `multi_city_map.html`): the visiting-order optimization
+(QUBO + simulated annealing, or the classical baseline) is real Python
+computation that has to run somewhere in response to each solve — a
+static HTML file can't do that on its own, even though the mapping parts
+now live entirely in the browser.
 
 ## Deploy to the cloud (a live URL, no laptop needed)
 
@@ -190,11 +200,11 @@ the easiest free option for this project. Steps:
 - Render's free tier spins the app down after ~15 minutes of no traffic,
   and the next visit takes ~30-50 seconds to wake back up. Open the link
   yourself a few minutes before you present so it's already warm.
-- The very first click-anywhere solve for each city (on a fresh deploy)
-  fetches real OpenStreetMap data live, same as running it locally — a few
-  seconds, then cached for the rest of that deploy's lifetime. Render's
-  free-tier disk doesn't persist across redeploys, so a new deploy means
-  that first-fetch cost happens again; it doesn't mean the app is broken.
+- Real road-network routing (the OSRM calls) happens in the visitor's own
+  browser now, not on Render's server, so it isn't affected by Render's
+  disk resetting on redeploy or by cloud-IP rate-limiting the way an
+  earlier version of this app was — see the `app.py` section above for
+  why that changed.
 - If you'd rather not deal with any of this by hand, Railway (railway.app)
   works almost identically to the Render steps above and is worth trying
   as a backup if Render's free-tier build ever times out on the heavier

@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
 """
+SUPERSEDED — you probably don't need to run this anymore. app.py was
+rewritten to get real road data from OSRM in the browser instead of from
+this project's own OpenStreetMap/Overpass fetching code, which sidesteps
+the Overpass reliability problems this script existed to work around. It's
+left here only for reference / in case you want to extend the *other*,
+offline static demo (main.py / output/multi_city_map.html) to use real
+street geometry instead of the curated landmark network it uses today.
+
 prefetch_street_graphs.py — run this ONCE from your own machine's normal
 internet connection (NOT from inside a locked-down cloud sandbox or a
 host whose IPs get rate-limited) to download real OpenStreetMap street

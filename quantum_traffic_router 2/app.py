@@ -4,53 +4,56 @@ app.py — the "click anywhere in the city" interactive routing server.
 
     python3 app.py
 
-Then open http://127.0.0.1:5000 in a browser. Click on the map to drop a
-Start pin, then an End pin, then (optionally) more stops in between — hit
-"Solve route" and it computes the best visiting order between your actual
-clicked points, using a REAL OpenStreetMap street network (not the fixed
-dozen landmarks the static multi_city_map.html demo uses), and draws the
-route following real streets.
+Then open http://127.0.0.1:5000 in a browser. Click on the map (or search a
+place name) to drop a Start pin, then an End pin, then optionally more
+stops in between — hit "Solve route" and it computes the best visiting
+order and draws a real, street-following route.
 
-Why this needs a running server (unlike multi_city_map.html, which is a
-self-contained file you can just double-click): solving an arbitrary click
-requires fetching/snapping against real street-network data and running
-the QUBO solver on demand, which means real Python code has to run in
-response to each click — a static HTML file can't do that on its own.
+ARCHITECTURE (rewritten to be reliable on cloud hosts): earlier versions of
+this file fetched OpenStreetMap street data on the SERVER using osmnx,
+which depends on reaching the public Overpass API from wherever app.py is
+running. That works fine from a laptop but routinely fails from cloud
+hosts (Render, AWS, etc.) — Overpass's operators rate-limit or block
+traffic from datacenter IP ranges to protect the service from bots, so the
+exact same code that worked locally would silently fall back to a tiny
+curated landmark network once deployed, producing straight-line "routes."
 
-First click on a city takes a few seconds longer (fetching real street
-data from OpenStreetMap over the internet); after that it's cached to
-disk (data/street_graphs/<city>.graphml) and instant on every later run.
-If OpenStreetMap's data API isn't reachable (blocked/flaky wifi), this
-automatically falls back to the same curated dozen-landmark network the
-static demo uses, and says so on the page.
+The fix: real road-network queries now happen in the BROWSER, not on this
+server, using OSRM (router.project-osrm.org) — the same class of public
+routing engine real map apps use, which is designed for and permits
+client-side use, and which the browser reaches from the visitor's own
+ordinary internet connection rather than a flagged datacenter IP. Two OSRM
+calls happen client-side (see templates/click_router.html):
+  1. Table API — a real, road-network-based travel-time matrix between all
+     clicked/searched points (not a straight-line estimate).
+  2. Route API — the actual street-following geometry, in the solved
+     visiting order, for drawing the route on the map.
+
+This server's only job is the part that genuinely needs a backend: solving
+the visiting-order optimization (the QUBO / quantum-inspired step, or the
+classical baseline) given a travel-time matrix the browser already
+computed. No osmnx, no Overpass, no local street graph, no "snapped Nm
+from the nearest known junction" — OSRM handles real-world snapping to the
+road network itself, so any point on/near an actual road works, anywhere.
 """
 
 import os
 import sys
 import traceback
 
+import numpy as np
 from flask import Flask, request, jsonify, render_template
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
-from city_graph import get_or_build_street_graph, nearest_node, list_cities, CITIES, _city_center
-from congestion import apply_congestion
-from distance_matrix import build_travel_time_matrix, path_to_coords
-from qubo_tsp import solve_quantum_inspired, solve_open_path_quantum_inspired, open_path_length
-from baseline import nearest_neighbor_2opt, nearest_neighbor_2opt_open_path
-from build_multi_city_map import load_inline_leaflet
+from city_graph import list_cities, _city_center  # noqa: E402  (just city names + map centers, no network calls)
+from qubo_tsp import solve_open_path_quantum_inspired  # noqa: E402
+from baseline import nearest_neighbor_2opt_open_path  # noqa: E402
+from build_multi_city_map import load_inline_leaflet  # noqa: E402
 
 app = Flask(__name__)
 
 MAX_STOPS = 10  # keeps the QUBO solve fast (N^2 binary variables) for a live in-browser demo
-_GRAPH_CACHE: dict[str, object] = {}  # in-process cache so repeat clicks in one session don't re-fetch/re-load
-
-
-def _graph_for(city: str):
-    if city not in _GRAPH_CACHE:
-        _GRAPH_CACHE[city] = get_or_build_street_graph(city)
-    return _GRAPH_CACHE[city]
-
 
 _LEAFLET_CSS, _LEAFLET_JS = load_inline_leaflet()
 
@@ -68,71 +71,40 @@ def index():
 
 @app.route("/api/solve", methods=["POST"])
 def solve():
+    """Takes a travel-time matrix the browser already computed via OSRM
+    and returns the optimal fixed-start/fixed-end visiting order. This
+    endpoint does no mapping/geocoding/street-data work at all — it's pure
+    optimization, which is why it's fast and has nothing left to fail on
+    a cloud host."""
     body = request.get_json(force=True)
-    city = body.get("city")
-    points = body.get("points", [])
+    matrix = body.get("matrix")
     method = body.get("method", "quantum")
-    hour = float(body.get("hour", 18.5))
 
-    if city not in CITIES:
-        return jsonify({"error": f"Unknown city '{city}'"}), 400
-    if len(points) < 2:
-        return jsonify({"error": "Need at least a start and an end point."}), 400
-    if len(points) > MAX_STOPS:
+    if not isinstance(matrix, list) or len(matrix) < 2:
+        return jsonify({"error": "Need a travel-time matrix for at least 2 points."}), 400
+    n = len(matrix)
+    if n > MAX_STOPS:
         return jsonify({"error": f"Please use at most {MAX_STOPS} points for a live demo-speed solve."}), 400
+    if any(not isinstance(row, list) or len(row) != n for row in matrix):
+        return jsonify({"error": "Matrix must be square (NxN)."}), 400
 
     try:
-        G = _graph_for(city)
-        Gc = apply_congestion(G, hour=hour, seed=42)
-
-        # snap each click to the nearest real node in the (real-street or
-        # fallback-curated) graph, and report how far off each click was so
-        # the UI can be honest about "you clicked open ground, nearest real
-        # junction was 350m away" rather than silently teleporting the pin
-        snapped_nodes, snap_info = [], []
-        for lat, lon in points:
-            node, dist_km = nearest_node(Gc, lat, lon)
-            snapped_nodes.append(node)
-            snap_info.append({"node_lat": Gc.nodes[node]["lat"], "node_lon": Gc.nodes[node]["lon"],
-                               "snap_distance_m": round(dist_km * 1000)})
-
-        # de-duplicate while preserving order (two clicks can legitimately
-        # snap to the same real intersection if they were close together)
-        seen = set()
-        unique_indices = [i for i, n in enumerate(snapped_nodes) if not (n in seen or seen.add(n))]
-        if len(unique_indices) < 2:
-            return jsonify({"error": "Your points all snapped to the same road junction — spread them out a bit more."}), 400
-
-        waypoints = [snapped_nodes[i] for i in unique_indices]
-        start_idx, end_idx = 0, len(waypoints) - 1
-        W, paths = build_travel_time_matrix(Gc, waypoints)
+        # OSRM durations are in seconds; the solver/report everywhere else
+        # in this project works in minutes, so convert once here.
+        W = np.array(matrix, dtype=float) / 60.0
+        start_idx, end_idx = 0, n - 1
 
         if method == "classical":
             result = nearest_neighbor_2opt_open_path(W, start_idx, end_idx)
         else:
-            # num_reads is lower here than in the offline benchmark script —
+            # num_reads is lower than the offline benchmark script uses —
             # free-tier cloud CPUs (e.g. Render's 0.1 vCPU) are much slower
             # than a laptop, and 150 reads still converges reliably for the
             # small (<=10 stop) problems this live demo solves.
             result = solve_open_path_quantum_inspired(W, start_idx, end_idx, num_reads=150)
 
-        order = result["path"]  # indices into `waypoints`
-
-        # stitch the full route as a real, street-following polyline by
-        # concatenating each consecutive leg's actual shortest path
-        full_route_coords = []
-        for i in range(len(order) - 1):
-            leg_key = (waypoints[order[i]], waypoints[order[i + 1]])
-            leg_path = paths[leg_key]
-            coords = path_to_coords(Gc, leg_path)
-            full_route_coords.extend(coords if i == 0 else coords[1:])  # avoid duplicating the junction point
-
         return jsonify({
-            "source": Gc.graph.get("source", "unknown"),
-            "fallback_reason": Gc.graph.get("fallback_reason"),
-            "order": order,
-            "snap_info": [snap_info[i] for i in unique_indices],
-            "route_path": full_route_coords,
+            "order": result["path"],
             "cost_minutes": round(result["cost"], 1),
             "method": method,
             "solve_ms": round(result.get("wall_seconds", 0) * 1000),
@@ -148,5 +120,4 @@ if __name__ == "__main__":
     # back to 5000 for local runs on your own machine.
     port = int(os.environ.get("PORT", 5000))
     print(f"Starting the click-anywhere router at http://127.0.0.1:{port}")
-    print("(First solve per city fetches real OpenStreetMap street data — a few seconds; cached after that.)")
     app.run(debug=False, host="0.0.0.0", port=port)
