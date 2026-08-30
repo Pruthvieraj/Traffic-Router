@@ -1,5 +1,9 @@
 # Quantum-Inspired Constraint-Aware Route Optimizer
 
+[![tests](https://github.com/<your-username>/<repo-name>/actions/workflows/tests.yml/badge.svg)](https://github.com/<your-username>/<repo-name>/actions/workflows/tests.yml)
+
+*(Replace `<your-username>/<repo-name>` above with your actual GitHub path once this is pushed — GitHub then renders a live, clickable "passing"/"failing" badge here, sourced from `.github/workflows/tests.yml`, which runs the full test suite below on every push. This is what turns "N tests passing" from a claim into something a judge can click and verify themselves.)*
+
 Built for **SIH 2026 — PS SIH26137 "Quantum-Inspired Traffic Route Optimization"** (Egreen Quanta).
 
 A working, runnable implementation: real road-network routing, congestion
@@ -174,10 +178,60 @@ provider's live congested-duration matrix; nothing else in the pipeline
 because they only ever consume a travel-time matrix, not caring where its
 numbers came from.
 
+**That upgrade path is now a concrete interface, not just a paragraph.**
+`src/traffic_provider.py` defines `TrafficProvider` — anything with a
+`get_congested_matrix(W_free_flow, hour)` method — and `app.py` picks one
+by name via the `TRAFFIC_PROVIDER` environment variable (default
+`simulated`), never calling `congestion.py` directly. `SimulatedTrafficProvider`
+is the only one actually wired to real data today; `LiveTrafficProviderStub`
+is a second class marking exactly where a real Google/TomTom/HERE
+integration would go, and raises a clear `NotImplementedError` if selected,
+rather than silently pretending to have live data it doesn't. Swapping in
+a real provider is "write one new class in this file, change one env var"
+— provably, since `app.py` never imports `congestion.py` at all anymore.
+
 For a real deployment, `OSRM_BASE_URL` (an environment variable, defaults
 to the free public `router.project-osrm.org` demo server) lets you point
 at a self-hosted OSRM instance instead, without touching code — worth
 doing if you outgrow the demo server's fair-use limits.
+
+**Dynamic re-optimization — simulating an incident.** A static "best order,
+computed once" route is only half of what judges mean by "traffic-aware
+routing" — the other half is reacting when something changes mid-route.
+Every stop-arrival line in the turn-by-turn directions panel has a
+"⚠ Simulate incident here" button: clicking it re-solves the exact same
+stops with a 4× congestion spike applied to that one leg
+(`src/congestion.py`'s `apply_incident_spikes`, via `/api/solve`'s optional
+`incident_pairs` field) and redraws whatever new order the optimizer finds
+— genuinely re-routing around the "closure" when an alternative exists,
+not just re-labeling the same path. `tests/test_app.py`'s
+`test_solve_incident_pairs_can_change_the_chosen_order` proves this isn't
+cosmetic: it asserts the chosen order actually differs once the spike is
+applied.
+
+**Multi-vehicle dispatch — a first step toward real VRP.** Everything
+above is single-vehicle TSP: one start, one end, one route. The "Vehicles"
+selector in the topbar is the honest next step: pick 2 or 3 vehicles and
+your first clicked point becomes a shared depot, with the remaining stops
+split across vehicles (deterministic farthest-point clustering — the same
+method `src/clustering.py` already used for single-vehicle scaling) and
+each vehicle's own depot-to-stops-and-back tour solved exactly with the
+same QUBO/classical solver used everywhere else in this project (see
+`solve_multi_vehicle` in `src/clustering.py`, served by the separate
+`/api/solve_fleet` endpoint so the single-vehicle contract above is
+completely unchanged). **Said plainly:** this is not a capacitated VRP
+solver — no per-vehicle load limits, no time windows, no rebalancing if
+one vehicle's cluster ends up much bigger than another's. What it proves
+is that the underlying solver and architecture generalize past a single
+vehicle, which is the real gap between a TSP demo and a fleet dispatch
+system, without dressing this up as more than it is.
+
+**Basic API hardening.** `/api/solve` and `/api/solve_fleet` are both
+rate-limited to 20 requests/minute per IP (via `flask-limiter`) so a public
+demo URL can't be trivially hammered. This is automatically disabled while
+running the pytest suite (which legitimately calls these endpoints far
+more than 20 times a minute) and degrades gracefully — no rate limiting,
+not a crash — if `flask-limiter` somehow isn't installed.
 
 ## The interface — what changed and why
 
@@ -340,7 +394,13 @@ The pipeline:
 6. **`src/benchmark.py`** + **`src/visualize.py`** — runs the two
    experiments below and produces the charts and report.
 7. **`src/clustering.py`** — scales the fixed-endpoint solver past what a
-   single QUBO can handle (see "Scaling past a dozen stops" below).
+   single QUBO can handle (see "Scaling past a dozen stops" below), and
+   also implements the multi-vehicle dispatch demo (`solve_multi_vehicle`).
+8. **`src/traffic_provider.py`** — the pluggable interface between "a
+   free-flow travel-time matrix" and "a congestion-adjusted one," so the
+   simulated model above can be swapped for a real paid traffic API by
+   adding one class here, without touching anything upstream or downstream
+   of it (see "Traffic-awareness" above).
 
 ## Automated tests
 
@@ -355,13 +415,30 @@ pip install pytest
 pytest tests/ -v
 ```
 
-53 tests, covering the QUBO solver, the classical baselines, the
-clustering/scaling logic, the congestion model, and the live Flask endpoint
-(including that a 20-stop request — which the old 10-stop limit would have
-rejected — now succeeds end-to-end, and that the traffic-awareness fields
-below come back correct for a given simulated hour). Worth running before
-a demo, and worth mentioning to judges: the "verified" claims here are
-checked by an actual test suite, not just narrated.
+**73 Python tests**, covering the QUBO solver, the classical baselines,
+the clustering/scaling logic, the multi-vehicle dispatch demo, the
+congestion model (including the on-demand incident spike), the pluggable
+traffic-provider interface, and the live Flask endpoints — including that
+a 20-stop request (which the old 10-stop limit would have rejected) now
+succeeds end-to-end, that the traffic-awareness fields come back correct
+for a given simulated hour, that an incident spike can actually change the
+chosen route order (not just the displayed number), and that
+`/api/solve_fleet` assigns every stop to exactly one vehicle.
+
+There's also a **6-test frontend suite** (`tests/frontend/`) for the one
+piece of frontend logic that used to have zero coverage — the turn-by-turn
+direction-building/formatting helpers in `static/route_helpers.js`. It
+needs only Node.js 18+ (its built-in test runner, no npm install):
+
+```
+node --test tests/frontend/*.test.js
+```
+
+Both suites run automatically on every push via
+`.github/workflows/tests.yml` — that's the badge at the top of this
+README. Worth running before a demo either way, and worth mentioning to
+judges: the "verified" claims here are checked by an actual, continuously-run
+test suite, not just narrated.
 
 ## Scaling past a dozen stops
 
@@ -451,6 +528,23 @@ real hardware result), not part of the live demo's normal code path — run
 it once, save `output/real_quantum_hardware_result.md`, and quote or
 screenshot it when a judge asks "is this actually quantum, or just named
 that."
+
+**This is the one item in the "10/10" punch list that genuinely can't be
+done for you** — running it needs *your* D-Wave Leap account and API
+token, which no one else can supply. It's 5 minutes, though:
+
+1. Sign up free at <https://cloud.dwavesys.com/leap/> (no credit card).
+2. `pip install dwave-system`
+3. Grab your API token from the Leap dashboard (top right, "API Token"),
+   then: `export DWAVE_API_TOKEN="your-token-here"`
+4. `python3 run_on_real_quantum_hardware.py`
+
+That's it — it prints the comparison table to your terminal and writes
+`output/real_quantum_hardware_result.md`, ready to paste straight into a
+slide or screenshot. The script already handles both graceful-failure
+paths (no `dwave-system` installed, or no/invalid token) with a clear
+message rather than a stack trace, so there's nothing to debug — if it
+doesn't print a QPU chip ID, the printed message says exactly why.
 
 ## How to pitch this at your internal round / to SIH judges
 

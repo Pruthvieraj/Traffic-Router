@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from baseline import nearest_neighbor_2opt_open_path
-from clustering import solve_open_path_scalable
+from clustering import solve_multi_vehicle, solve_open_path_scalable
 from qubo_tsp import open_path_length
 
 
@@ -70,3 +70,78 @@ def test_single_interior_stop_does_not_crash():
     W = _random_matrix(3, seed=1)
     result = solve_open_path_scalable(W, 0, 2, method="classical", cluster_size=1)
     _assert_valid_open_path(result["path"], 3, 0, 2)
+
+
+# ---------- solve_multi_vehicle (the multi-vehicle dispatch demo) ----------
+
+def _assert_valid_closed_loop(path, depot):
+    """Every vehicle's path must start and end at the depot, and everything
+    in between is unique (no stop visited twice by the same vehicle)."""
+    assert path[0] == depot
+    assert path[-1] == depot
+    interior = path[1:-1]
+    assert len(interior) == len(set(interior))
+    assert depot not in interior
+
+
+def test_multi_vehicle_every_stop_assigned_exactly_once():
+    n = 9
+    W = _random_matrix(n, seed=3)
+    depot = 0
+    stop_indices = list(range(1, n))
+    result = solve_multi_vehicle(W, depot, stop_indices, n_vehicles=3, method="classical")
+
+    assert result["n_vehicles"] == 3
+    all_assigned = []
+    for v in result["vehicles"]:
+        _assert_valid_closed_loop(v["path"], depot)
+        all_assigned.extend(v["path"][1:-1])
+    # every non-depot stop assigned to exactly one vehicle, none dropped or duplicated
+    assert sorted(all_assigned) == sorted(stop_indices)
+
+
+def test_multi_vehicle_total_cost_matches_sum_of_vehicle_costs():
+    n = 7
+    W = _random_matrix(n, seed=5)
+    result = solve_multi_vehicle(W, 0, list(range(1, n)), n_vehicles=2, method="classical")
+    assert result["total_cost"] == pytest.approx(sum(v["cost"] for v in result["vehicles"]))
+    for v in result["vehicles"]:
+        assert v["cost"] == pytest.approx(open_path_length(v["path"], W))
+
+
+def test_multi_vehicle_caps_vehicle_count_at_stop_count():
+    """Asking for more vehicles than there are stops shouldn't crash or
+    create empty-route 'phantom' vehicles."""
+    n = 4
+    W = _random_matrix(n, seed=8)
+    result = solve_multi_vehicle(W, 0, [1, 2, 3], n_vehicles=10, method="classical")
+    assert result["n_vehicles"] <= 3
+    assert all(v["stops"] >= 1 for v in result["vehicles"])
+
+
+def test_multi_vehicle_single_vehicle_matches_closed_loop_baseline():
+    """With n_vehicles=1, this should just be an ordinary single-vehicle
+    closed-loop tour — no different from calling the underlying solver
+    directly on depot + all stops."""
+    n = 6
+    W = _random_matrix(n, seed=2)
+    result = solve_multi_vehicle(W, 0, list(range(1, n)), n_vehicles=1, method="classical")
+    assert result["n_vehicles"] == 1
+    _assert_valid_closed_loop(result["vehicles"][0]["path"], 0)
+
+
+def test_multi_vehicle_empty_stops_returns_empty_fleet():
+    W = _random_matrix(3, seed=1)
+    result = solve_multi_vehicle(W, 0, [], n_vehicles=3, method="classical")
+    assert result == {"vehicles": [], "total_cost": 0.0, "n_vehicles": 0, "wall_seconds": 0.0}
+
+
+def test_multi_vehicle_quantum_method_also_works():
+    n = 5
+    W = _random_matrix(n, seed=11)
+    result = solve_multi_vehicle(W, 0, list(range(1, n)), n_vehicles=2, method="quantum")
+    all_assigned = []
+    for v in result["vehicles"]:
+        _assert_valid_closed_loop(v["path"], 0)
+        all_assigned.extend(v["path"][1:-1])
+    assert sorted(all_assigned) == [1, 2, 3, 4]

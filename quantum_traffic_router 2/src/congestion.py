@@ -122,6 +122,33 @@ def apply_congestion_to_matrix(W: np.ndarray, hour: float, seed: int = 42) -> np
     return Wc
 
 
+def apply_incident_spikes(W: np.ndarray, pairs: list, multiplier: float = 4.0) -> np.ndarray:
+    """Apply an extra, ON-DEMAND congestion spike to specific (i, j) point
+    pairs, on top of an already time-of-day-congested matrix — models an
+    accident, a waterlogged underpass, a VIP-movement road closure, etc.
+    happening on one specific leg of an otherwise-normal route.
+
+    This is the real-time-reoptimization demo: app.py's "Simulate incident"
+    button in the turn-by-turn directions panel re-solves the SAME stops
+    with one leg spiked, and the optimizer picks a new visiting order if a
+    better one exists that avoids or reduces time on that leg — this is
+    what "traffic-aware routing" means to most judges (reacting to a
+    condition changing), not just picking one good order and never
+    revisiting it.
+
+    Spikes are applied symmetrically (both directions), since a closed or
+    badly-congested road segment slows traffic going either way.
+    """
+    Wc = W.copy()
+    n = W.shape[0]
+    for pair in pairs:
+        i, j = pair[0], pair[1]
+        if 0 <= i < n and 0 <= j < n and i != j:
+            Wc[i, j] *= multiplier
+            Wc[j, i] *= multiplier
+    return Wc
+
+
 if __name__ == "__main__":
     from city_graph import build_demo_graph
 

@@ -5,13 +5,20 @@ dimod>=0.12
 dwave-samplers>=1.8
 folium>=0.20
 flask>=3.0
+flask-limiter>=3.5
 osmnx>=1.9
 gunicorn>=21.2
 
-# osmnx is what powers "click anywhere in the city" real-street routing in
-# app.py. If it fails to install or Overpass is unreachable at runtime,
-# everything still works — it automatically falls back to the bundled
-# curated landmark network (same one multi_city_map.html always uses).
+# app.py no longer calls osmnx directly (see "ARCHITECTURE" in its own
+# docstring — real road-network queries moved client-side to OSRM). osmnx
+# is still used by src/city_graph.py's get_or_build_street_graph(), which
+# only prefetch_street_graphs.py calls now; it's kept here for that offline
+# tool, not because the live app needs it.
+#
+# flask-limiter adds basic per-IP rate limiting to /api/solve and
+# /api/solve_fleet (20 requests/minute) so a public demo URL can't be
+# trivially hammered. It's automatically disabled while running under
+# pytest (see app.py) so the test suite is never rate-limited.
 #
 # gunicorn is only needed when deploying app.py to a cloud host (Render,
 # Railway, etc.) — see the "Deploy to the cloud" section in README.md.
@@ -26,3 +33,7 @@ gunicorn>=21.2
 # tests/ suite, not something the app or a deploy needs. Install it
 # separately to run tests:
 #     pip install pytest && pytest tests/ -v
+#
+# The frontend helper tests (tests/frontend/) need only Node.js 18+ (for
+# its built-in test runner) — no npm install, no extra Python dependency:
+#     node --test tests/frontend/*.test.js
