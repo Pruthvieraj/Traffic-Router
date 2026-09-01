@@ -3,6 +3,21 @@
 <head>
 <meta charset="utf-8">
 <title>Click-Anywhere Route Optimizer</title>
+<script>
+  // Applied as early as possible (before the page's own CSS/JS below even
+  // loads) so a returning visitor's dark-theme choice — or a first-time
+  // visitor's OS-level dark-mode preference — is in place for the very
+  // first paint, instead of flashing light-then-dark. Wrapped in try/catch
+  // since localStorage can throw in some private-browsing configurations.
+  (function () {
+    try {
+      var saved = localStorage.getItem('routerTheme');
+      var wantsDark = saved ? saved === 'dark'
+        : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      if (wantsDark) document.documentElement.setAttribute('data-theme', 'dark');
+    } catch (err) { /* default to light */ }
+  })();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%236366f1'/%3E%3Ccircle cx='12' cy='12' r='2.3' fill='%2322d3ee'/%3E%3Cellipse cx='12' cy='12' rx='9' ry='3.6' fill='none' stroke='%2322d3ee' stroke-width='1.3'/%3E%3Cellipse cx='12' cy='12' rx='9' ry='3.6' fill='none' stroke='%2322d3ee' stroke-width='1.3' transform='rotate(60 12 12)'/%3E%3Cellipse cx='12' cy='12' rx='9' ry='3.6' fill='none' stroke='%2322d3ee' stroke-width='1.3' transform='rotate(120 12 12)'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -26,6 +41,48 @@
     --panel-border: rgba(255, 255, 255, 0.6);
     --radius: 14px;
     --shadow: 0 10px 32px rgba(15, 23, 42, 0.16), 0 1px 4px rgba(15, 23, 42, 0.08);
+    /* Light-mode values for every other surface that used to be a bare
+       hex color inline — introduced so the dark theme below (see
+       html[data-theme="dark"]) can override just these tokens instead of
+       every individual rule. */
+    --page-bg: #eef1f6;
+    --surface-solid: #ffffff;
+    --border-soft: #eef0f3;
+    --border-medium: #dde3ea;
+    --surface-muted: #f8f9fb;
+    --surface-muted-hover: #eef0f6;
+    --surface-muted-hover-border: #c7cede;
+    --hover-bg: #f4f2ff;
+    --code-bg: #f0f2f5;
+    --stop-marker-bg: #f6f3ff;
+    --stop-marker-color: #6d28d9;
+    --directions-text: #2c3e50;
+  }
+  /* Dark theme — toggled by #themeBtn, persisted in localStorage, and
+     defaulting to the OS/browser preference on a first visit (see the
+     theme-init script near the top of <body> and the toggle wiring near
+     the bottom of the main script). Overrides only the tokens above; every
+     rule elsewhere in this file reads a token rather than a literal color,
+     so nothing else needs to change for the whole page to re-skin. */
+  html[data-theme="dark"] {
+    --ink: #e7ecf5;
+    --ink-soft: #aab6c9;
+    --muted: #7c8aa3;
+    --panel-bg: rgba(17, 24, 39, 0.88);
+    --panel-border: rgba(255, 255, 255, 0.10);
+    --page-bg: #0a0f1c;
+    --surface-solid: #131c30;
+    --border-soft: rgba(255, 255, 255, 0.10);
+    --border-medium: rgba(255, 255, 255, 0.18);
+    --surface-muted: rgba(255, 255, 255, 0.06);
+    --surface-muted-hover: rgba(255, 255, 255, 0.12);
+    --surface-muted-hover-border: rgba(255, 255, 255, 0.32);
+    --hover-bg: rgba(99, 102, 241, 0.22);
+    --code-bg: rgba(255, 255, 255, 0.08);
+    --stop-marker-bg: rgba(139, 92, 246, 0.20);
+    --stop-marker-color: #c4b5fd;
+    --directions-text: #dbe4f0;
+    --shadow: 0 10px 32px rgba(0, 0, 0, 0.45), 0 1px 4px rgba(0, 0, 0, 0.3);
   }
   * { box-sizing: border-box; }
   html, body {
@@ -40,7 +97,7 @@
      a hardcoded pixel offset guessing the topbar's height, so nothing
      spills outside the topbar or gets covered by the map when it wraps to
      two or three rows on a narrower screen. */
-  body { display: flex; flex-direction: column; overflow: hidden; }
+  body { display: flex; flex-direction: column; overflow: hidden; background: var(--page-bg); transition: background 0.2s ease; }
   #content { position: relative; flex: 1 1 auto; min-height: 0; }
   #map { position: absolute; inset: 0; cursor: crosshair; }
 
@@ -145,14 +202,14 @@
   }
   #suggestions {
     position: absolute; top: 42px; left: 0; width: 320px; max-height: 260px; overflow-y: auto;
-    background: white; color: var(--ink); border-radius: 10px; box-shadow: var(--shadow);
+    background: var(--surface-solid); color: var(--ink); border-radius: 10px; box-shadow: var(--shadow);
     z-index: 1000; display: none; animation: dropIn 0.15s ease-out;
   }
   #suggestions .suggestion {
-    padding: 9px 13px; font-size: 12.5px; border-bottom: 1px solid #f0f2f5; cursor: pointer; line-height: 1.4;
+    padding: 9px 13px; font-size: 12.5px; border-bottom: 1px solid var(--border-soft); cursor: pointer; line-height: 1.4;
   }
   #suggestions .suggestion:last-child { border-bottom: none; }
-  #suggestions .suggestion:hover { background: #f4f2ff; }
+  #suggestions .suggestion:hover { background: var(--hover-bg); }
   #suggestions .suggestion-empty {
     padding: 11px 13px; font-size: 12px; line-height: 1.55; color: var(--ink-soft);
     font-style: italic; cursor: default;
@@ -168,6 +225,9 @@
   #topbar button.primary.loading { cursor: progress; }
   #topbar button.danger { background: transparent; border: 1px solid rgba(239, 68, 68, 0.5); color: #ff8b8b; }
   #topbar button.danger:hover { background: rgba(239, 68, 68, 0.15); }
+  #topbar button.ghost { background: transparent; border: 1px solid rgba(255, 255, 255, 0.22); color: #cbd5e1; }
+  #topbar button.ghost:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.4); }
+  #topbar button#themeBtn { padding: 8px 10px; display: inline-flex; align-items: center; justify-content: center; }
 
   .spinner {
     display: inline-block; width: 11px; height: 11px; border: 2px solid rgba(255, 255, 255, 0.4);
@@ -210,12 +270,43 @@
     0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.28); }
     50% { box-shadow: 0 0 0 5px rgba(16, 185, 129, 0); }
   }
-  #stats .legend { display: flex; gap: 14px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #eef0f3; font-size: 11px; color: var(--ink-soft); }
+  #stats .legend { display: flex; gap: 14px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-soft); font-size: 11px; color: var(--ink-soft); }
   #stats .legend span { display: inline-flex; align-items: center; gap: 5px; }
   #stats .swatch { width: 16px; height: 3px; border-radius: 2px; display: inline-block; }
   #stats .swatch.solid { background: var(--accent-1); }
   #stats .swatch.dashed { background: repeating-linear-gradient(90deg, var(--warn) 0 4px, transparent 4px 8px); }
-  #stats .footnote { margin-top: 8px; padding-top: 8px; border-top: 1px solid #eef0f3; font-size: 10.5px; color: var(--muted); line-height: 1.5; }
+  #stats .footnote { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-soft); font-size: 10.5px; color: var(--muted); line-height: 1.5; }
+  #stats .export-row { display: flex; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-soft); }
+  #stats .export-btn {
+    flex: 1; font-family: inherit; font-size: 11.5px; font-weight: 600; padding: 7px 8px;
+    border-radius: 8px; border: 1px solid var(--border-medium); background: var(--surface-muted); color: var(--ink-soft);
+    cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  #stats .export-btn:hover { background: var(--surface-muted-hover); border-color: var(--surface-muted-hover-border); color: var(--ink); }
+
+  /* Printable itinerary — hidden on screen entirely, and the ONLY thing
+     visible when window.print() is triggered by the "Print / PDF" export
+     button. This is the dependency-free path to a PDF: every browser's
+     print dialog offers "Save as PDF" for free, no server-side PDF
+     library needed for something this simple (one page of numbered
+     directions). */
+  #printArea { display: none; }
+  @media print {
+    body * { visibility: hidden; }
+    #printArea, #printArea * { visibility: visible; }
+    html, body, #content { height: auto !important; overflow: visible !important; }
+    #printArea {
+      display: block; position: absolute; top: 0; left: 0; width: 100%;
+      padding: 24px; color: #000; font-family: Arial, sans-serif;
+    }
+    #printArea h1 { font-size: 20px; margin: 0 0 4px; }
+    #printArea .print-summary { font-size: 12.5px; color: #333; margin-bottom: 16px; }
+    #printArea ol { padding-left: 22px; margin: 0; }
+    #printArea li { margin-bottom: 9px; font-size: 13px; line-height: 1.5; }
+    #printArea li b { display: block; }
+    #printArea .pd { color: #666; font-size: 11px; }
+    #printArea .print-footnote { margin-top: 18px; font-size: 10.5px; color: #777; }
+  }
 
   #directions {
     position: absolute; top: 16px; right: 18px; bottom: 18px; width: 300px; max-height: calc(100% - 34px);
@@ -223,7 +314,7 @@
   }
   #directions-header {
     flex: 0 0 auto; padding: 12px 16px; font-size: 13px; font-weight: 700; color: var(--ink);
-    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    border-bottom: 1px solid var(--border-soft);
     display: flex; justify-content: space-between; align-items: center;
   }
   #directions-header button {
@@ -233,13 +324,13 @@
   #directions-header button:hover { color: var(--danger); }
   #directions-list { list-style: none; margin: 0; padding: 6px 0; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
   #directions-list li {
-    padding: 9px 16px; font-size: 12.5px; color: #2c3e50; line-height: 1.5;
-    border-bottom: 1px solid #f2f2f2; position: relative;
+    padding: 9px 16px; font-size: 12.5px; color: var(--directions-text); line-height: 1.5;
+    border-bottom: 1px solid var(--border-soft); position: relative;
   }
   #directions-list li:last-child { border-bottom: none; }
   #directions-list li .dist { color: var(--muted); font-size: 11px; display: block; margin-top: 2px; }
   #directions-list li.stop-marker {
-    background: #f6f3ff; font-weight: 700; color: #6d28d9; border-left: 3px solid var(--accent-2);
+    background: var(--stop-marker-bg); font-weight: 700; color: var(--stop-marker-color); border-left: 3px solid var(--accent-2);
   }
   #directions-list .direction-text { }
   .incident-btn {
@@ -249,6 +340,115 @@
   }
   .incident-btn:hover:not(:disabled) { background: rgba(249, 115, 22, 0.22); }
   .incident-btn:disabled { opacity: 0.5; cursor: progress; }
+
+  /* ---------- Precedence rules panel ---------- */
+  #precedencePanel {
+    position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+    width: 380px; max-width: calc(100% - 40px); max-height: calc(100% - 90px);
+    z-index: 800; display: none; flex-direction: column; overflow: hidden;
+    background: var(--panel-bg); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--panel-border); box-shadow: var(--shadow); border-radius: var(--radius);
+  }
+  #precedencePanel-header {
+    flex: 0 0 auto; padding: 12px 16px; font-size: 13px; font-weight: 700; color: var(--ink);
+    border-bottom: 1px solid var(--border-soft);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  #precedencePanel-header button {
+    background: none; border: none; color: var(--muted); font-size: 17px; cursor: pointer;
+    padding: 0 4px; line-height: 1; border-radius: 6px;
+  }
+  #precedencePanel-header button:hover { color: var(--danger); }
+  #precedencePanel-body { padding: 14px 16px 16px; overflow-y: auto; }
+  #precedenceForm { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  #precedenceForm select {
+    flex: 1; min-width: 0; font-family: inherit; font-size: 12.5px; padding: 7px 8px;
+    border: 1px solid var(--border-medium); border-radius: 8px; background: var(--surface-solid); color: var(--ink);
+  }
+  #precedenceForm span { font-size: 12px; color: var(--ink-soft); }
+  #precedenceForm button {
+    font-family: inherit; font-size: 12px; font-weight: 700; color: white; cursor: pointer;
+    background: linear-gradient(120deg, var(--accent-1), var(--accent-2)); border: none;
+    border-radius: 8px; padding: 7px 12px;
+  }
+  #precedenceList { list-style: none; margin: 0 0 8px; padding: 0; }
+  #precedenceList li {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 7px 10px; font-size: 12.5px; color: var(--ink); background: var(--surface-muted);
+    border-radius: 8px; margin-bottom: 6px;
+  }
+  #precedenceList li button {
+    background: none; border: none; color: var(--muted); font-size: 15px; cursor: pointer; line-height: 1; padding: 0 2px;
+  }
+  #precedenceList li button:hover { color: var(--danger); }
+  #precedenceStatus { font-size: 12px; color: var(--ink-soft); }
+
+  /* ---------- Per-stop weights panel ---------- */
+  #weightsPanel {
+    position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+    width: 340px; max-width: calc(100% - 40px); max-height: calc(100% - 90px);
+    z-index: 800; display: none; flex-direction: column; overflow: hidden;
+    background: var(--panel-bg); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--panel-border); box-shadow: var(--shadow); border-radius: var(--radius);
+  }
+  #weightsPanel-header {
+    flex: 0 0 auto; padding: 12px 16px; font-size: 13px; font-weight: 700; color: var(--ink);
+    border-bottom: 1px solid var(--border-soft);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  #weightsPanel-header button {
+    background: none; border: none; color: var(--muted); font-size: 17px; cursor: pointer;
+    padding: 0 4px; line-height: 1; border-radius: 6px;
+  }
+  #weightsPanel-header button:hover { color: var(--danger); }
+  #weightsPanel-body { padding: 14px 16px 16px; overflow-y: auto; }
+  #weightsList { list-style: none; margin: 0; padding: 0; }
+  #weightsList li {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 6px 0; font-size: 12.5px; color: var(--ink);
+  }
+  #weightsList li input {
+    width: 90px; font-family: inherit; font-size: 12.5px; padding: 6px 8px;
+    border: 1px solid var(--border-medium); border-radius: 7px; background: var(--surface-solid); color: var(--ink);
+  }
+
+  /* ---------- Bulk import panel ---------- */
+  #importPanel {
+    position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+    width: 420px; max-width: calc(100% - 40px); max-height: calc(100% - 90px);
+    z-index: 800; display: none; flex-direction: column; overflow: hidden;
+    background: var(--panel-bg); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--panel-border); box-shadow: var(--shadow); border-radius: var(--radius);
+  }
+  #importPanel-header {
+    flex: 0 0 auto; padding: 12px 16px; font-size: 13px; font-weight: 700; color: var(--ink);
+    border-bottom: 1px solid var(--border-soft);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  #importPanel-header button {
+    background: none; border: none; color: var(--muted); font-size: 17px; cursor: pointer;
+    padding: 0 4px; line-height: 1; border-radius: 6px;
+  }
+  #importPanel-header button:hover { color: var(--danger); }
+  #importPanel-body { padding: 14px 16px 16px; overflow-y: auto; }
+  .import-help { margin: 0 0 10px; font-size: 12px; line-height: 1.55; color: var(--ink-soft); }
+  .import-help code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  #importTextarea {
+    width: 100%; font-family: inherit; font-size: 12.5px; padding: 9px 11px; resize: vertical;
+    border: 1px solid var(--border-medium); border-radius: 9px; background: var(--surface-solid); color: var(--ink); margin-bottom: 8px; box-sizing: border-box;
+  }
+  #importTextarea:focus { outline: none; border-color: var(--accent-1); }
+  #importFile { font-size: 12px; margin-bottom: 10px; max-width: 100%; }
+  #importStatus { font-size: 12px; line-height: 1.5; color: var(--ink-soft); margin-bottom: 4px; }
+  #importStatus:not(:empty) { margin-bottom: 10px; }
+  #importSubmit {
+    font-family: inherit; font-size: 12.5px; font-weight: 700; color: white; cursor: pointer;
+    background: linear-gradient(120deg, var(--accent-1), var(--accent-2)); border: none;
+    border-radius: 9px; padding: 9px; width: 100%; box-shadow: 0 2px 10px rgba(99, 102, 241, 0.45);
+    transition: transform 0.1s ease, box-shadow 0.15s ease;
+  }
+  #importSubmit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(99, 102, 241, 0.6); }
+  #importSubmit:disabled { opacity: 0.6; cursor: progress; }
 
   #error, #notice {
     position: absolute; top: 16px; left: 50%; transform: translateX(-50%); padding: 9px 18px;
@@ -315,6 +515,10 @@
     <option value="satellite">Satellite view</option>
     <option value="street">Street map</option>
   </select>
+  <button id="themeBtn" type="button" class="ghost" title="Toggle dark / light theme" aria-label="Toggle dark / light theme">
+    <svg id="themeIconSun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    <svg id="themeIconMoon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+  </button>
   <div class="method-wrap">
     <select id="methodSelect">
       <option value="quantum">Quantum-inspired (QUBO + SA)</option>
@@ -331,8 +535,13 @@
     <i class="info-icon" title="Multi-vehicle mode: your first point becomes a shared depot, and the remaining stops are split across N vehicles, each solved as its own exact round-trip. Stops are grouped by travel-time proximity, then automatically rebalanced to a fair share (about total-stops / N each) so one vehicle doesn't end up with far more than another. A first step toward real fleet dispatch (VRP) — not a full capacitated VRP solver.">i</i>
   </div>
   <div class="method-wrap" id="capacityWrap" style="display:none;">
+    <select id="capacityModeSelect" title="Whether the cap below counts stops, or per-stop weight">
+      <option value="count">Max stops/vehicle</option>
+      <option value="weight">Max load/vehicle</option>
+    </select>
     <input id="capacityInput" type="number" min="1" max="20" placeholder="Max/vehicle">
-    <i class="info-icon" title="Optional STRICTER cap: by default, vehicles are already auto-balanced to a fair share of the stops. Set this only if you need a harder limit than that fair share — no vehicle will then be given more than this many stops, and if the vehicle count above can't satisfy it, it's automatically raised until it can. This is an enforced constraint, not a suggestion.">i</i>
+    <button id="weightsBtn" type="button" class="ghost" style="display:none;">Set weights</button>
+    <i class="info-icon" title="Optional STRICTER cap: by default, vehicles are already auto-balanced to a fair share of the stops. Set this only if you need a harder limit than that fair share. 'Max stops/vehicle' counts stops; 'Max load/vehicle' instead caps the TOTAL per-stop weight (set via 'Set weights') a vehicle may carry, for when deliveries aren't all equally heavy. Either way, the vehicle count above is automatically raised if it can't satisfy the cap — this is an enforced constraint, not a suggestion.">i</i>
   </div>
   <select id="hourSelect" title="Simulated time of day (affects estimated traffic)">
     <option value="now">Now</option>
@@ -354,6 +563,9 @@
     <div id="suggestions"></div>
   </div>
   <button id="solveBtn" class="primary" disabled>Solve route</button>
+  <button id="importBtn" type="button" class="ghost">Import stops</button>
+  <button id="shareBtn" type="button" class="ghost" disabled>Share</button>
+  <button id="precedenceBtn" type="button" class="ghost">Precedence</button>
   <button id="clearBtn" class="danger">Clear points</button>
 </div>
 <div id="content">
@@ -368,6 +580,47 @@
       <button id="directionsClose" title="Hide">&times;</button>
     </div>
     <ol id="directions-list"></ol>
+  </div>
+  <div id="printArea"></div>
+  <div id="weightsPanel">
+    <div id="weightsPanel-header">
+      <span>Per-stop weights</span>
+      <button id="weightsClose" title="Close">&times;</button>
+    </div>
+    <div id="weightsPanel-body">
+      <p class="import-help">Give each stop a delivery weight (or volume — any consistent unit works). "Max load/vehicle" above then caps the TOTAL weight a vehicle carries, not its stop count. Any stop left blank defaults to 1.</p>
+      <ul id="weightsList"></ul>
+    </div>
+  </div>
+  <div id="precedencePanel">
+    <div id="precedencePanel-header">
+      <span>Precedence rules</span>
+      <button id="precedenceClose" title="Close">&times;</button>
+    </div>
+    <div id="precedencePanel-body">
+      <p class="import-help">Require one stop to be visited before another — e.g. a pickup before its matching drop-off. This is a real constraint baked directly into the solve, not a post-hoc filter (see the README). Single-vehicle mode only; rules automatically follow your stops as the route is (re-)solved, but are cleared if you add or remove a stop, since positions shift.</p>
+      <div id="precedenceForm">
+        <select id="precUSelect"></select>
+        <span>before</span>
+        <select id="precVSelect"></select>
+        <button id="precAddBtn" type="button">Add</button>
+      </div>
+      <ul id="precedenceList"></ul>
+      <div id="precedenceStatus"></div>
+    </div>
+  </div>
+  <div id="importPanel">
+    <div id="importPanel-header">
+      <span>Import stops</span>
+      <button id="importClose" title="Close">&times;</button>
+    </div>
+    <div id="importPanel-body">
+      <p class="import-help">Paste one stop per line — an address/place name, or a direct <code>lat, lon</code> pair (e.g. <code>18.5679, 73.7143</code>). Addresses are geocoded against the selected city, the same way the search box above works. Or upload a .csv/.txt file with the same format, one stop per line.</p>
+      <textarea id="importTextarea" rows="7" placeholder="123 MG Road, Pune&#10;18.5679, 73.7143&#10;Sukhwani Gracia, Wakad"></textarea>
+      <input id="importFile" type="file" accept=".csv,.txt">
+      <div id="importStatus"></div>
+      <button id="importSubmit">Add stops</button>
+    </div>
   </div>
 </div>
 
@@ -447,6 +700,7 @@ function redrawPins() {
     return marker;
   });
   document.getElementById('solveBtn').disabled = clickedPoints.length < 2;
+  document.getElementById('shareBtn').disabled = clickedPoints.length < 2;
 }
 
 function animateIn(el) {
@@ -479,6 +733,8 @@ function invalidateRoute(noticeMsg) {
 }
 
 function removePoint(i) {
+  _removePrecedenceForRemovedIndex(i);
+  _removeWeightForRemovedIndex(i);
   clickedPoints.splice(i, 1);
   redrawPins();
   invalidateRoute(clickedPoints.length >= 2 ? 'Point removed — click Solve route again.' : null);
@@ -500,6 +756,8 @@ map.on('click', (e) => addPoint(e.latlng.lat, e.latlng.lng));
 
 document.getElementById('clearBtn').addEventListener('click', () => {
   clickedPoints = [];
+  _clearPrecedenceRules();
+  _clearStopWeights();
   redrawPins();
   invalidateRoute(null);
   document.getElementById('hint').style.display = 'block';
@@ -507,6 +765,14 @@ document.getElementById('clearBtn').addEventListener('click', () => {
 
 document.getElementById('vehicleSelect').addEventListener('change', () => {
   document.getElementById('capacityWrap').style.display = isFleetMode() ? 'flex' : 'none';
+  // Precedence is single-vehicle-mode only (see the panel's own docstring
+  // in the JS below) — hide the entry point and drop any rules entirely
+  // when switching into fleet mode, rather than let them sit around
+  // referring to a mode where they're silently never sent to the server.
+  document.getElementById('precedenceBtn').style.display = isFleetMode() ? 'none' : '';
+  if (isFleetMode()) _clearPrecedenceRules();
+  // Per-stop weights are fleet-mode only, symmetrically.
+  if (!isFleetMode()) _clearStopWeights();
   redrawPins(); // relabels the first pin as Depot ("D") vs Start ("S")
   invalidateRoute(null);
 });
@@ -516,12 +782,195 @@ document.getElementById('basemapSelect').addEventListener('change', (e) => {
   else { map.removeLayer(satelliteLayer); map.addLayer(streetLayer); }
 });
 
+// ---------- Dark / light theme toggle ----------
+// The actual theme is applied by the tiny inline script at the top of
+// <head> (so it's in place before first paint) and by the
+// html[data-theme="dark"] CSS variable overrides at the top of the main
+// stylesheet — this just flips the attribute, persists the explicit
+// choice, and keeps the sun/moon icon in sync.
+function _syncThemeIcon() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  document.getElementById('themeIconSun').style.display = isDark ? 'none' : 'inline';
+  document.getElementById('themeIconMoon').style.display = isDark ? 'inline' : 'none';
+}
+_syncThemeIcon();
+
+document.getElementById('themeBtn').addEventListener('click', () => {
+  const goingDark = document.documentElement.getAttribute('data-theme') !== 'dark';
+  if (goingDark) document.documentElement.setAttribute('data-theme', 'dark');
+  else document.documentElement.removeAttribute('data-theme');
+  try { localStorage.setItem('routerTheme', goingDark ? 'dark' : 'light'); } catch (err) { /* ignore */ }
+  _syncThemeIcon();
+});
+
 document.getElementById('citySelect').addEventListener('change', (e) => {
   map.setView(CENTERS[e.target.value], 13);
   clickedPoints = [];
+  _clearPrecedenceRules();
+  _clearStopWeights();
   redrawPins();
   invalidateRoute(null);
 });
+
+// ---------- Precedence ("visit X before Y") rules ----------
+// A real constraint baked directly into the QUBO/classical solve (see
+// src/qubo_tsp.py's build_open_path_bqm and app.py's /api/solve), not a
+// post-hoc filter on the result. Scoped to single-vehicle mode only, and
+// rules are stored as [uIdx, vIdx] pairs into the CURRENT clickedPoints
+// array — which only stays meaningful across an add (append-only, safe)
+// or a drag (same index, safe), not a removal or a solve's reordering, so
+// both of those are handled explicitly below (remap on solve, drop on
+// removal) rather than just clearing the whole list on every change.
+
+let precedenceRules = [];
+
+function _interiorStopIndices() {
+  // Index 0 is Start, the last index is End — only indices in between are
+  // eligible, mirroring how the backend treats start_idx/end_idx as fixed.
+  return clickedPoints.length > 2 ? clickedPoints.slice(1, -1).map((_, i) => i + 1) : [];
+}
+
+function _refreshPrecedenceForm() {
+  const interior = _interiorStopIndices();
+  const uSel = document.getElementById('precUSelect');
+  const vSel = document.getElementById('precVSelect');
+  const optionsHtml = interior.map(i => `<option value="${i}">Stop ${i}</option>`).join('');
+  uSel.innerHTML = optionsHtml;
+  vSel.innerHTML = optionsHtml;
+  const form = document.getElementById('precedenceForm');
+  const statusEl = document.getElementById('precedenceStatus');
+  if (interior.length < 2) {
+    form.style.display = 'none';
+    statusEl.textContent = 'Add at least 2 stops between your Start and End points first.';
+  } else {
+    form.style.display = 'flex';
+    statusEl.textContent = '';
+    vSel.value = interior[1]; // default u/v to two DIFFERENT stops, not the same one twice
+  }
+}
+
+function _renderPrecedenceList() {
+  document.getElementById('precedenceList').innerHTML = precedenceRules.map(([u, v], i) => `
+    <li><span>Stop ${u} before Stop ${v}</span><button data-i="${i}" type="button" title="Remove this rule">&times;</button></li>
+  `).join('');
+}
+
+document.getElementById('precedenceBtn').addEventListener('click', () => {
+  document.getElementById('importPanel').style.display = 'none'; // only one floating panel open at a time
+  const panel = document.getElementById('precedencePanel');
+  panel.style.display = 'flex';
+  animateIn(panel);
+  _refreshPrecedenceForm();
+  _renderPrecedenceList();
+});
+
+document.getElementById('precedenceClose').addEventListener('click', () => {
+  document.getElementById('precedencePanel').style.display = 'none';
+});
+
+document.getElementById('precAddBtn').addEventListener('click', () => {
+  const u = parseInt(document.getElementById('precUSelect').value, 10);
+  const v = parseInt(document.getElementById('precVSelect').value, 10);
+  const statusEl = document.getElementById('precedenceStatus');
+  if (u === v) { statusEl.textContent = 'Pick two different stops.'; return; }
+  if (precedenceRules.some(([ru, rv]) => ru === u && rv === v)) { statusEl.textContent = 'That rule already exists.'; return; }
+  if (precedenceRules.some(([ru, rv]) => ru === v && rv === u)) { statusEl.textContent = "That's the reverse of an existing rule — remove it first if you want to flip it."; return; }
+  precedenceRules.push([u, v]);
+  statusEl.textContent = '';
+  _renderPrecedenceList();
+});
+
+document.getElementById('precedenceList').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  precedenceRules.splice(parseInt(btn.dataset.i, 10), 1);
+  _renderPrecedenceList();
+});
+
+function _clearPrecedenceRules() {
+  precedenceRules = [];
+  _renderPrecedenceList();
+}
+
+function _removePrecedenceForRemovedIndex(i) {
+  precedenceRules = precedenceRules
+    .filter(([u, v]) => u !== i && v !== i) // any rule naming the removed stop no longer makes sense
+    .map(([u, v]) => [u > i ? u - 1 : u, v > i ? v - 1 : v]); // everything after it shifts down by one
+  _renderPrecedenceList();
+}
+
+function _remapPrecedenceAfterSolve(order) {
+  // `order` is solveData.order: order[newPosition] = oldIndex. Re-express
+  // each rule in terms of the NEW positions so it keeps meaning the same
+  // real stops after clickedPoints gets reassigned to the solved order —
+  // without this, a rule would silently start referring to whatever
+  // stop happens to now sit at its old index, not the stop it was
+  // actually written for.
+  precedenceRules = precedenceRules
+    .map(([u, v]) => [order.indexOf(u), order.indexOf(v)])
+    .filter(([u, v]) => u !== -1 && v !== -1);
+  _renderPrecedenceList();
+}
+
+// ---------- Per-stop demand weights (fleet mode, "Max load/vehicle") ----------
+// Lets a "Max load/vehicle" cap mean total delivery weight/volume instead
+// of a plain stop count — see src/clustering.py's solve_multi_vehicle
+// `demands`/`vehicle_capacity` parameters. Only relevant in fleet mode,
+// where point 0 is the shared depot and every other CURRENT point is a
+// stop; like precedenceRules, weights are keyed by CURRENT index and need
+// the same removal-shift handling (fleet mode is solved once and not
+// re-ordered/re-solved in place the way single-vehicle mode is, so no
+// remap-after-solve step is needed here).
+
+let stopWeights = {}; // {stopIndex: weight}, missing entries default to 1
+
+function _refreshWeightsForm() {
+  document.getElementById('weightsList').innerHTML = clickedPoints.slice(1).map((_, i) => {
+    const idx = i + 1;
+    const val = stopWeights[idx] != null ? stopWeights[idx] : 1;
+    return `<li><span>Stop ${idx}</span><input type="number" min="0" step="any" value="${val}" data-idx="${idx}"></li>`;
+  }).join('');
+}
+
+document.getElementById('capacityModeSelect').addEventListener('change', () => {
+  const weighted = document.getElementById('capacityModeSelect').value === 'weight';
+  document.getElementById('capacityInput').placeholder = weighted ? 'Max load/vehicle' : 'Max/vehicle';
+  document.getElementById('weightsBtn').style.display = weighted ? '' : 'none';
+});
+
+document.getElementById('weightsBtn').addEventListener('click', () => {
+  document.getElementById('importPanel').style.display = 'none';
+  document.getElementById('precedencePanel').style.display = 'none';
+  const panel = document.getElementById('weightsPanel');
+  panel.style.display = 'flex';
+  animateIn(panel);
+  _refreshWeightsForm();
+});
+
+document.getElementById('weightsClose').addEventListener('click', () => {
+  document.getElementById('weightsPanel').style.display = 'none';
+});
+
+document.getElementById('weightsList').addEventListener('input', (e) => {
+  if (e.target.tagName !== 'INPUT') return;
+  const idx = parseInt(e.target.dataset.idx, 10);
+  const val = parseFloat(e.target.value);
+  stopWeights[idx] = (!isNaN(val) && val >= 0) ? val : 1;
+});
+
+function _clearStopWeights() {
+  stopWeights = {};
+}
+
+function _removeWeightForRemovedIndex(i) {
+  const remapped = {};
+  Object.keys(stopWeights).forEach((k) => {
+    const idx = parseInt(k, 10);
+    if (idx === i) return; // the removed stop's own weight no longer applies
+    remapped[idx > i ? idx - 1 : idx] = stopWeights[idx];
+  });
+  stopWeights = remapped;
+}
 
 // ---------- Search with live autocomplete (OpenStreetMap Nominatim) ----------
 
@@ -579,14 +1028,19 @@ async function _nominatimSearch(fullQuery, viewbox) {
   return resp.json();
 }
 
+// Soft-bias results toward a city (bounded=0 means this only nudges
+// ranking, it never excludes a real match that's genuinely elsewhere) —
+// roughly a 130km-wide box around the city center. Shared by the live
+// search box and the bulk-import geocoding loop below.
+function _viewboxForCity(city) {
+  const center = CENTERS[city]; // [lat, lon]
+  const d = 0.6;
+  return `${center[1] - d},${center[0] + d},${center[1] + d},${center[0] - d}`;
+}
+
 async function fetchSuggestions(query) {
   const city = document.getElementById('citySelect').value;
-  const center = CENTERS[city]; // [lat, lon]
-  // Soft-bias results toward the selected city (bounded=0 means this only
-  // nudges ranking, it never excludes a real match that's genuinely
-  // elsewhere) — roughly a 130km-wide box around the city center.
-  const d = 0.6;
-  const viewbox = `${center[1] - d},${center[0] + d},${center[1] + d},${center[0] - d}`;
+  const viewbox = _viewboxForCity(city);
 
   const stripped = _stripTrailingSubUnit(query);
   // Try progressively broader/simpler phrasings of the same query until one
@@ -646,6 +1100,110 @@ function selectSuggestion(i) {
   suggestionsEl.style.display = 'none';
   lastSuggestions = [];
 }
+
+// ---------- Bulk import (paste text or upload a .csv/.txt) ----------
+// Lets someone add many stops at once instead of clicking one by one: each
+// line is either a direct "lat, lon" pair (added straight away, no network
+// needed) or an address/place name (geocoded the same way the search box
+// above does, just without the interactive suggestion dropdown — the top
+// hit is taken automatically since there's no one there to pick from a
+// list for a bulk paste of many lines).
+
+const importBtn = document.getElementById('importBtn');
+const importPanel = document.getElementById('importPanel');
+const importTextarea = document.getElementById('importTextarea');
+const importFileEl = document.getElementById('importFile');
+const importStatusEl = document.getElementById('importStatus');
+const importSubmitBtn = document.getElementById('importSubmit');
+
+importBtn.addEventListener('click', () => {
+  document.getElementById('precedencePanel').style.display = 'none'; // only one floating panel open at a time
+  importPanel.style.display = 'flex';
+  animateIn(importPanel);
+  importTextarea.focus();
+});
+
+document.getElementById('importClose').addEventListener('click', () => {
+  importPanel.style.display = 'none';
+});
+
+importFileEl.addEventListener('change', async () => {
+  const file = importFileEl.files[0];
+  if (!file) return;
+  const text = (await file.text()).trim();
+  const existing = importTextarea.value.trim();
+  importTextarea.value = existing ? `${existing}\n${text}` : text;
+  importFileEl.value = ''; // allow re-uploading the same file name later
+});
+
+// A line counts as a direct coordinate pair only if it's ENTIRELY two
+// numbers separated by a comma/semicolon/tab (optionally with a leading
+// "-") — anything else (an address, a name, an address that happens to
+// contain a number) falls through to geocoding instead.
+function _parseLatLon(line) {
+  const m = line.trim().match(/^(-?\d+(?:\.\d+)?)\s*[,;\t]\s*(-?\d+(?:\.\d+)?)$/);
+  if (!m) return null;
+  const lat = parseFloat(m[1]), lon = parseFloat(m[2]);
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null; // not a real coordinate
+  return [lat, lon];
+}
+
+async function _geocodeOneLine(line, city, viewbox) {
+  const variants = [`${line}, ${city}, India`, `${line}, ${city}`, line];
+  for (const q of variants) {
+    try {
+      const results = await _nominatimSearch(q, viewbox);
+      if (results.length) return [parseFloat(results[0].lat), parseFloat(results[0].lon)];
+    } catch (err) {
+      // this phrasing's request failed outright — try the next, broader one
+    }
+  }
+  return null;
+}
+
+importSubmitBtn.addEventListener('click', async () => {
+  const lines = importTextarea.value.split('\n').map(l => l.trim()).filter(Boolean);
+  if (!lines.length) {
+    importStatusEl.textContent = 'Paste at least one address or "lat, lon" line first, or upload a file.';
+    return;
+  }
+
+  const city = document.getElementById('citySelect').value;
+  const viewbox = _viewboxForCity(city);
+
+  importSubmitBtn.disabled = true;
+  importSubmitBtn.textContent = 'Adding...';
+  importStatusEl.textContent = '';
+
+  let added = 0;
+  const failed = [];
+  let hitCap = false;
+
+  for (const line of lines) {
+    if (clickedPoints.length >= MAX_STOPS) { hitCap = true; break; }
+    const point = _parseLatLon(line) || await _geocodeOneLine(line, city, viewbox);
+    if (point) { addPoint(point[0], point[1]); added++; }
+    else failed.push(line);
+  }
+
+  importSubmitBtn.disabled = false;
+  importSubmitBtn.textContent = 'Add stops';
+
+  if (added && !failed.length && !hitCap) {
+    importPanel.style.display = 'none';
+    importTextarea.value = '';
+    showNotice(`Added ${added} stop${added === 1 ? '' : 's'} from import.`);
+    return;
+  }
+
+  const parts = [];
+  if (added) parts.push(`Added ${added} stop${added === 1 ? '' : 's'}`);
+  if (failed.length) {
+    parts.push(`couldn't find: ${failed.map(escapeHtml).join('; ')} — try satellite view and clicking their exact spot instead`);
+  }
+  if (hitCap) parts.push(`stopped at the ${MAX_STOPS}-stop limit`);
+  importStatusEl.innerHTML = parts.join('. ') + '.';
+});
 
 // ---------- Custom info-icon tooltips ----------
 // Replaces the native title= tooltip (slow to appear, plain browser
@@ -878,6 +1436,7 @@ document.getElementById('directionsClose').addEventListener('click', () => {
 // apply_incident_spikes and app.py's incident_pairs handling.
 
 let lastSolveContext = null; // { hour, method } from the most recent successful single-vehicle solve
+let lastRouteExport = null; // { points, latlngs, legs, cost_minutes, free_flow_minutes, method, hour } — feeds GPX/print export
 
 document.getElementById('directions-list').addEventListener('click', (e) => {
   const btn = e.target.closest('.incident-btn');
@@ -901,6 +1460,7 @@ async function simulateIncident(legIdx) {
         method: lastSolveContext.method,
         hour: lastSolveContext.hour,
         incident_pairs: [[legIdx, legIdx + 1]],
+        precedence: precedenceRules,
       }),
     });
     const solveData = await solveResp.json();
@@ -915,6 +1475,7 @@ async function simulateIncident(legIdx) {
     animateRoute(routeInfo.latlngs, routeLayer, '#f97316') // orange = "rerouted around an incident"
       .then(() => animateTravelingMarker(routeInfo.latlngs, routeLayer, 1800));
 
+    _remapPrecedenceAfterSolve(solveData.order);
     clickedPoints = orderedPoints;
     redrawPins();
     renderDirections(routeInfo.legs, orderedPoints);
@@ -933,15 +1494,97 @@ async function simulateIncident(legIdx) {
         ? 'The optimizer found a different visiting order to route around the closure.'
         : 'No alternate stop order was available — that leg is unavoidable given the fixed Start/End points.'}
         Incident: a simulated 4&times; slowdown on one leg, for demo purposes — not a real closure feed.</div>
+      ${_exportButtonsHtml()}
     `;
     animateIn(statsEl);
     lastSolveContext = { hour: lastSolveContext.hour, method: lastSolveContext.method, cost_minutes: solveData.cost_minutes };
+    lastRouteExport = {
+      points: orderedPoints, latlngs: routeInfo.latlngs, legs: routeInfo.legs,
+      cost_minutes: solveData.cost_minutes, free_flow_minutes: solveData.free_flow_minutes,
+      method: lastSolveContext.method, hour: lastSolveContext.hour,
+    };
   } catch (err) {
     showError(err.message || 'Incident simulation failed.');
   } finally {
     document.querySelectorAll('.incident-btn').forEach(b => { b.disabled = false; });
   }
 }
+
+// ---------- GPX + printable itinerary export (single-vehicle routes) ----------
+// Two dependency-free export paths, deliberately scoped to single-vehicle
+// solves (see lastRouteExport above) rather than fleet mode, matching the
+// project's existing pattern of a simpler UI for the newer multi-vehicle
+// feature. GPX needs no library — it's plain XML any GPS app/Google Maps/
+// Garmin/Strava can import. PDF needs no library either — every browser's
+// own print dialog offers "Save as PDF" for free, which is plenty for one
+// page of numbered directions.
+
+function _exportButtonsHtml() {
+  return `
+    <div class="export-row">
+      <button class="export-btn" id="exportGpxBtn" type="button" title="Download a .gpx file of this route for any GPS app">&#8681; GPX</button>
+      <button class="export-btn" id="exportPrintBtn" type="button" title="Open a printable itinerary (use your browser's Save as PDF)">&#128424; Print / PDF</button>
+    </div>
+  `;
+}
+
+function _buildGpx({ points, latlngs }) {
+  const wpts = points.map((p, i) =>
+    `  <wpt lat="${p[0]}" lon="${p[1]}"><name>${escapeHtml(stopLabel(i, points.length))}</name></wpt>`
+  ).join('\n');
+  const trkpts = latlngs.map(p => `      <trkpt lat="${p[0]}" lon="${p[1]}"></trkpt>`).join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Quantum-Inspired Traffic Router" xmlns="http://www.topografix.com/GPX/1/1">
+${wpts}
+  <trk>
+    <name>Optimized route</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>`;
+}
+
+function downloadGpx() {
+  if (!lastRouteExport) return;
+  const gpx = _buildGpx(lastRouteExport);
+  const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'route.gpx';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function printItinerary() {
+  if (!lastRouteExport) return;
+  const { points, legs, cost_minutes, free_flow_minutes, method, hour } = lastRouteExport;
+  const lines = buildDirections(legs, points);
+  const rows = lines.map(l => `
+    <li>
+      ${l.isStopMarker ? `<b>${escapeHtml(l.text)}</b>` : escapeHtml(l.text)}
+      ${l.dist > 0 ? `<span class="pd"> &middot; ${formatDistance(l.dist)}</span>` : ''}
+    </li>
+  `).join('');
+  document.getElementById('printArea').innerHTML = `
+    <h1>Route itinerary</h1>
+    <div class="print-summary">${points.length} stops &middot; ${cost_minutes} min estimated drive time (${formatHour(hour)} traffic, ${method === 'quantum' ? 'quantum-inspired' : 'classical'} solve) &middot; ${free_flow_minutes} min free-flow baseline</div>
+    <ol>${rows}</ol>
+    <div class="print-footnote">Generated by the Quantum-Inspired Traffic Router. Traffic is a simulated time-of-day model, not a live feed.</div>
+  `;
+  window.print();
+}
+
+// Buttons live inside #stats, which is fully re-rendered (innerHTML
+// replaced) on every solve — event delegation on the stable parent means
+// this listener never needs re-attaching.
+document.getElementById('stats').addEventListener('click', (e) => {
+  if (e.target.closest('#exportGpxBtn')) downloadGpx();
+  else if (e.target.closest('#exportPrintBtn')) printItinerary();
+});
 
 document.getElementById('solveBtn').addEventListener('click', async () => {
   const nVehicles = parseInt(document.getElementById('vehicleSelect').value, 10);
@@ -976,7 +1619,7 @@ async function solveSingleVehicle() {
     const solveResp = await fetch('/api/solve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ matrix: durations, method, hour }),
+      body: JSON.stringify({ matrix: durations, method, hour, precedence: precedenceRules }),
     });
     const solveData = await solveResp.json();
     if (!solveResp.ok) { showError(solveData.error || 'Solve failed.'); return; }
@@ -1006,6 +1649,7 @@ async function solveSingleVehicle() {
     animateRoute(routeInfo.latlngs, routeLayer, '#6366f1')
       .then((line) => animateTravelingMarker(routeInfo.latlngs, routeLayer, 2000));
 
+    _remapPrecedenceAfterSolve(solveData.order);
     clickedPoints = orderedPoints;
     redrawPins();
     renderDirections(routeInfo.legs, orderedPoints);
@@ -1027,9 +1671,15 @@ async function solveSingleVehicle() {
       <div class="savings-pill">${solveData.savings_vs_naive_pct}% faster than click order (${solveData.naive_order_minutes} min)</div>
       ${legendHtml}
       <div class="footnote">${clusterNote}Road data: real road network (OSRM). Traffic: simulated time-of-day model, not live sensors. Solve time: ${solveData.solve_ms} ms.</div>
+      ${_exportButtonsHtml()}
     `;
     animateIn(statsEl);
     lastSolveContext = { hour, method, cost_minutes: solveData.cost_minutes };
+    lastRouteExport = {
+      points: orderedPoints, latlngs: routeInfo.latlngs, legs: routeInfo.legs,
+      cost_minutes: solveData.cost_minutes, free_flow_minutes: solveData.free_flow_minutes,
+      method, hour,
+    };
   } catch (err) {
     showError(err.message || 'Request failed.');
   } finally {
@@ -1064,7 +1714,17 @@ async function solveFleet(nVehicles) {
     const hourRaw = document.getElementById('hourSelect').value;
     const hour = hourRaw === 'now' ? (new Date().getHours() + new Date().getMinutes() / 60) : parseFloat(hourRaw);
     const capacityRaw = document.getElementById('capacityInput').value;
-    const maxStopsPerVehicle = capacityRaw ? parseInt(capacityRaw, 10) : null;
+    const weighted = document.getElementById('capacityModeSelect').value === 'weight';
+    const maxStopsPerVehicle = (!weighted && capacityRaw) ? parseInt(capacityRaw, 10) : null;
+    let demands = null, vehicleCapacity = null;
+    if (weighted && capacityRaw) {
+      vehicleCapacity = parseFloat(capacityRaw);
+      demands = {};
+      clickedPoints.slice(1).forEach((_, i) => {
+        const idx = i + 1;
+        demands[idx] = stopWeights[idx] != null ? stopWeights[idx] : 1;
+      });
+    }
 
     const durations = await osrmTable(clickedPoints);
 
@@ -1074,7 +1734,7 @@ async function solveFleet(nVehicles) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         matrix: durations, method, hour, n_vehicles: nVehicles, depot_index: 0,
-        max_stops_per_vehicle: maxStopsPerVehicle,
+        max_stops_per_vehicle: maxStopsPerVehicle, demands, vehicle_capacity: vehicleCapacity,
       }),
     });
     const solveData = await solveResp.json();
@@ -1092,14 +1752,18 @@ async function solveFleet(nVehicles) {
         const routeInfo = await osrmRoute(pts);
         animateRoute(routeInfo.latlngs, routeLayer, color);
       } catch (e) { /* one vehicle's road geometry failing shouldn't block the others */ }
+      const demandLabel = v.demand != null ? `, load ${v.demand}` : '';
       vehicleRows += `
-        <div class="row"><span><span class="swatch solid" style="background:${color}"></span>Vehicle ${v.vehicle + 1} (${v.stops} stop${v.stops === 1 ? '' : 's'})</span><b>${v.cost_minutes} min</b></div>
+        <div class="row"><span><span class="swatch solid" style="background:${color}"></span>Vehicle ${v.vehicle + 1} (${v.stops} stop${v.stops === 1 ? '' : 's'}${demandLabel})</span><b>${v.cost_minutes} min</b></div>
       `;
     }
 
-    const capacityNote = (maxStopsPerVehicle && solveData.n_vehicles_used > nVehicles)
-      ? `${nVehicles} vehicle${nVehicles === 1 ? '' : 's'} couldn't satisfy a ${maxStopsPerVehicle}-stop cap, so this was automatically raised to ${solveData.n_vehicles_used}. `
-      : '';
+    let capacityNote = '';
+    if (maxStopsPerVehicle && solveData.n_vehicles_used > nVehicles) {
+      capacityNote = `${nVehicles} vehicle${nVehicles === 1 ? '' : 's'} couldn't satisfy a ${maxStopsPerVehicle}-stop cap, so this was automatically raised to ${solveData.n_vehicles_used}. `;
+    } else if (vehicleCapacity && solveData.n_vehicles_used > nVehicles) {
+      capacityNote = `${nVehicles} vehicle${nVehicles === 1 ? '' : 's'} couldn't satisfy a ${vehicleCapacity}-load cap, so this was automatically raised to ${solveData.n_vehicles_used}. `;
+    }
     const statsEl = document.getElementById('stats');
     statsEl.style.display = 'block';
     statsEl.innerHTML = `
@@ -1118,6 +1782,112 @@ async function solveFleet(nVehicles) {
     btn.textContent = 'Solve route';
   }
 }
+
+// ---------- Shareable route link ----------
+// Packs the current pins + settings into a URL query param so pasting the
+// link into a chat/email reproduces the same map for whoever opens it —
+// no server-side storage, no account, no expiry: the state lives entirely
+// in the link itself. It intentionally does NOT include the already-solved
+// route (the solved order can shift if OSRM's live travel-time estimates
+// change between when it's shared and when it's opened) — the recipient
+// clicks Solve route themselves, same as anyone else.
+
+function _buildShareUrl() {
+  const state = {
+    c: document.getElementById('citySelect').value,
+    m: document.getElementById('methodSelect').value,
+    h: document.getElementById('hourSelect').value,
+    v: document.getElementById('vehicleSelect').value,
+    cap: document.getElementById('capacityInput').value || null,
+    cm: document.getElementById('capacityModeSelect').value,
+    // Rounded to ~11cm precision — plenty for a pin, and keeps the link short.
+    p: clickedPoints.map(([lat, lon]) => [Math.round(lat * 1e6) / 1e6, Math.round(lon * 1e6) / 1e6]),
+    prec: precedenceRules,
+    w: stopWeights,
+  };
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.searchParams.set('r', JSON.stringify(state));
+  return url.toString();
+}
+
+document.getElementById('shareBtn').addEventListener('click', async () => {
+  if (clickedPoints.length < 2) return;
+  const url = _buildShareUrl();
+  try {
+    await navigator.clipboard.writeText(url);
+    showNotice('Shareable link copied to your clipboard.');
+  } catch (err) {
+    // Clipboard API can be blocked (older browser, insecure context, no
+    // user-activation edge case) — fall back to just showing the link so
+    // it can still be copied by hand instead of silently doing nothing.
+    window.prompt('Copy this link:', url);
+  }
+});
+
+// Restore state from a shared link, if present. Runs once at page load,
+// after every element/function it touches has already been set up above.
+(function restoreFromShareLink() {
+  const raw = new URLSearchParams(window.location.search).get('r');
+  if (!raw) return;
+
+  let state;
+  try { state = JSON.parse(raw); } catch (err) { return; } // malformed/tampered link — just ignore it
+
+  if (state.c && CITIES.includes(state.c)) {
+    document.getElementById('citySelect').value = state.c;
+    map.setView(CENTERS[state.c], 13);
+  }
+  if (state.m === 'quantum' || state.m === 'classical') {
+    document.getElementById('methodSelect').value = state.m;
+  }
+  const hourOptions = Array.from(document.getElementById('hourSelect').options).map(o => o.value);
+  if (hourOptions.includes(state.h)) document.getElementById('hourSelect').value = state.h;
+
+  const vehicleOptions = Array.from(document.getElementById('vehicleSelect').options).map(o => o.value);
+  if (vehicleOptions.includes(state.v)) {
+    document.getElementById('vehicleSelect').value = state.v;
+    document.getElementById('capacityWrap').style.display = isFleetMode() ? 'flex' : 'none';
+    document.getElementById('precedenceBtn').style.display = isFleetMode() ? 'none' : '';
+  }
+  if (state.cap) document.getElementById('capacityInput').value = state.cap;
+  if (state.cm === 'weight' || state.cm === 'count') {
+    document.getElementById('capacityModeSelect').value = state.cm;
+    document.getElementById('weightsBtn').style.display = state.cm === 'weight' ? '' : 'none';
+  }
+
+  if (Array.isArray(state.p) && state.p.length) {
+    const points = state.p.filter(pt => Array.isArray(pt) && pt.length === 2).slice(0, MAX_STOPS);
+    clickedPoints = points;
+    redrawPins();
+    document.getElementById('hint').style.display = 'none';
+    if (points.length) map.setView(points[0], 13);
+
+    // Precedence rules only make sense if every index they reference
+    // survived the MAX_STOPS truncation above and single-vehicle mode.
+    if (Array.isArray(state.prec) && !isFleetMode()) {
+      precedenceRules = state.prec.filter(pair =>
+        Array.isArray(pair) && pair.length === 2 &&
+        Number.isInteger(pair[0]) && Number.isInteger(pair[1]) &&
+        pair[0] > 0 && pair[0] < points.length - 1 && pair[1] > 0 && pair[1] < points.length - 1,
+      );
+    }
+
+    // Same idea for per-stop weights, fleet mode only: keep only entries
+    // whose index still refers to a real (non-depot) stop after truncation.
+    if (state.w && typeof state.w === 'object' && isFleetMode()) {
+      stopWeights = {};
+      Object.keys(state.w).forEach((k) => {
+        const idx = parseInt(k, 10);
+        const val = parseFloat(state.w[k]);
+        if (idx > 0 && idx < points.length && !isNaN(val) && val >= 0) stopWeights[idx] = val;
+      });
+    }
+
+    const truncated = state.p.length > MAX_STOPS ? ` (kept the first ${MAX_STOPS} — that's the limit for a live demo-speed solve)` : '';
+    showNotice(`Loaded ${points.length} stop${points.length === 1 ? '' : 's'} from a shared link${truncated}. Click Solve route to compute it.`);
+  }
+})();
 </script>
 </body>
 </html>

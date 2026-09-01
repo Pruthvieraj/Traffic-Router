@@ -371,3 +371,376 @@ def test_info_icon_tooltip_stays_within_the_viewport(live_server, browser):
     page.close()
     assert box["left"] >= 0
     assert box["right"] <= 375
+
+
+# ---------- bulk import (paste text / upload a .csv or .txt) ----------
+
+def test_bulk_import_adds_direct_coordinates_and_geocoded_addresses(live_server, browser):
+    """A pasted block mixing a direct "lat, lon" line (added with no
+    network call at all) and a plain address line (geocoded through the
+    same Nominatim endpoint the search box uses) should drop pins for
+    both, close the panel, and report the count added."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+
+    def handle_route(route):
+        route.fulfill(json=[{
+            "display_name": "MG Road, Pune, Maharashtra, India",
+            "lat": "18.5204", "lon": "73.8567",
+        }])
+
+    page.route("**nominatim.openstreetmap.org/search**", handle_route)
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    page.click("#importBtn")
+    page.wait_for_function("document.getElementById('importPanel').style.display === 'flex'")
+    page.fill("#importTextarea", "18.5679, 73.7143\nMG Road")
+    page.click("#importSubmit")
+
+    page.wait_for_function(
+        "document.getElementById('importPanel').style.display === 'none'", timeout=5000,
+    )
+    n_points = page.evaluate("clickedPoints.length")
+    notice = page.inner_text("#notice")
+    page.close()
+    assert n_points == 2
+    assert "Added 2" in notice
+
+
+def test_bulk_import_reports_lines_it_could_not_place(live_server, browser):
+    """When a pasted line can't be geocoded by any query variant, the
+    import panel should stay open and say which line failed, rather than
+    silently dropping it or closing as if everything succeeded."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.route("**nominatim.openstreetmap.org/search**", lambda route: route.fulfill(json=[]))
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    page.click("#importBtn")
+    page.wait_for_function("document.getElementById('importPanel').style.display === 'flex'")
+    page.fill("#importTextarea", "Totally Nonexistent Society Zzzqx")
+    page.click("#importSubmit")
+
+    page.wait_for_function(
+        "document.getElementById('importStatus').textContent.length > 0", timeout=5000,
+    )
+    status = page.inner_text("#importStatus")
+    panel_open = page.eval_on_selector("#importPanel", "el => el.style.display") == "flex"
+    page.close()
+    assert "Totally Nonexistent Society Zzzqx" in status
+    assert panel_open
+
+
+# ---------- shareable route link ----------
+
+def test_share_button_copies_a_link_that_encodes_the_current_pins_and_settings(live_server, browser):
+    """Clicking Share with >=2 pins dropped should copy a URL whose ?r=
+    param decodes back to the same pins and the currently-selected
+    method/hour/vehicle settings — that round trip is the whole feature."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    # Stub the Clipboard API before any page script runs, so the write is
+    # captured deterministically instead of depending on real OS clipboard
+    # access (which headless Chromium doesn't reliably grant).
+    page.add_init_script("""
+        window.__copied = null;
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { writeText: (text) => { window.__copied = text; return Promise.resolve(); } },
+        });
+    """)
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    page.select_option("#citySelect", "Mumbai")
+    page.select_option("#methodSelect", "classical")
+    page.click("#map", position={"x": 300, "y": 200})
+    page.click("#map", position={"x": 500, "y": 400})
+    page.click("#shareBtn")
+    page.wait_for_function("window.__copied !== null", timeout=3000)
+
+    copied = page.evaluate("window.__copied")
+    page.close()
+
+    assert "?r=" in copied
+    encoded = copied.split("?r=", 1)[1]
+    state = json.loads(urllib.parse.unquote(encoded))
+    assert state["c"] == "Mumbai"
+    assert state["m"] == "classical"
+    assert len(state["p"]) == 2
+
+
+def test_opening_a_shared_link_restores_its_pins_and_settings(live_server, browser):
+    """The inverse of the above: a URL built by hand with a ?r= state
+    should reconstruct the same map on load — city, method, and pins —
+    without the visitor having to click anything first."""
+    state = {
+        "c": "Chennai", "m": "quantum", "h": "18.5", "v": "1", "cap": None,
+        "p": [[13.0827, 80.2707], [13.0475, 80.2824], [13.0604, 80.2496]],
+    }
+    url = f"{live_server}/?r={urllib.parse.quote(json.dumps(state))}"
+
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(url, wait_until="networkidle", timeout=15000)
+    page.wait_for_function("clickedPoints.length === 3", timeout=5000)
+
+    city_value = page.eval_on_selector("#citySelect", "el => el.value")
+    method_value = page.eval_on_selector("#methodSelect", "el => el.value")
+    notice = page.inner_text("#notice")
+    page.close()
+
+    assert city_value == "Chennai"
+    assert method_value == "quantum"
+    assert "3 stops" in notice
+
+
+# ---------- GPX + printable itinerary export ----------
+# Both exercised by driving lastRouteExport/downloadGpx()/printItinerary()
+# directly with synthetic OSRM-shaped data, the same no-real-network
+# pattern test_incident_button_renders_for_every_stop_marker_line already
+# uses for renderDirections() — a real solve needs a live OSRM call this
+# sandbox (and a hermetic test run in general) shouldn't depend on.
+
+_SYNTHETIC_ROUTE_EXPORT_JS = """
+    lastRouteExport = {
+        points: [[18.52, 73.85], [18.55, 73.90]],
+        latlngs: [[18.52, 73.85], [18.53, 73.87], [18.55, 73.90]],
+        legs: [{ steps: [
+            { maneuver: { type: 'depart' }, name: 'MG Road', distance: 500 },
+            { maneuver: { type: 'arrive' }, name: '', distance: 0 },
+        ]}],
+        cost_minutes: 12.3, free_flow_minutes: 9.1, method: 'quantum', hour: 13,
+    };
+"""
+
+
+def test_download_gpx_produces_a_valid_gpx_file_with_waypoints_and_a_track(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.evaluate(_SYNTHETIC_ROUTE_EXPORT_JS)
+
+    with page.expect_download() as dl_info:
+        page.evaluate("downloadGpx()")
+    content = open(dl_info.value.path()).read()
+    page.close()
+
+    assert "<gpx" in content
+    assert content.count("<wpt") == 2  # one per point in lastRouteExport.points
+    assert "<trkpt" in content  # the road-following geometry, not just the stops
+
+
+def test_print_itinerary_fills_the_print_area_and_triggers_print(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.evaluate(_SYNTHETIC_ROUTE_EXPORT_JS)
+    page.evaluate("window.__printed = false; window.print = () => { window.__printed = true; };")
+    page.evaluate("printItinerary()")
+
+    text = page.inner_text("#printArea")
+    printed = page.evaluate("window.__printed")
+    page.close()
+
+    assert "MG Road" in text
+    assert "12.3" in text  # cost_minutes shown in the summary
+    assert printed
+
+
+# ---------- dark / light theme toggle ----------
+
+def test_theme_toggle_switches_theme_and_persists_across_reloads(live_server, browser):
+    """Clicking the theme button should flip html[data-theme] (which is
+    what every color CSS variable in the stylesheet keys off of), and a
+    reload afterward should come back dark — the whole point of persisting
+    the choice in localStorage rather than just an in-memory toggle."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    # No stored preference and a headless browser's default OS-level
+    # preference is light, so the page should start undecorated (light).
+    assert page.evaluate("document.documentElement.getAttribute('data-theme')") is None
+
+    page.click("#themeBtn")
+    page.wait_for_function("document.documentElement.getAttribute('data-theme') === 'dark'", timeout=3000)
+    page_bg_dark = page.evaluate(
+        "getComputedStyle(document.documentElement).getPropertyValue('--page-bg').trim()"
+    )
+    moon_visible = page.eval_on_selector("#themeIconMoon", "el => getComputedStyle(el).display") != "none"
+
+    page.reload(wait_until="networkidle")
+    theme_after_reload = page.evaluate("document.documentElement.getAttribute('data-theme')")
+    page_bg_after_reload = page.evaluate(
+        "getComputedStyle(document.documentElement).getPropertyValue('--page-bg').trim()"
+    )
+    page.close()
+
+    assert page_bg_dark != ""  # a dark-specific value is actually defined and applied
+    assert moon_visible
+    assert theme_after_reload == "dark"
+    assert page_bg_after_reload == page_bg_dark
+
+
+def test_theme_toggle_switches_back_to_light(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    page.click("#themeBtn")
+    page.wait_for_function("document.documentElement.getAttribute('data-theme') === 'dark'", timeout=3000)
+    page.click("#themeBtn")
+    page.wait_for_function("document.documentElement.getAttribute('data-theme') !== 'dark'", timeout=3000)
+    stored = page.evaluate("localStorage.getItem('routerTheme')")
+    sun_visible = page.eval_on_selector("#themeIconSun", "el => getComputedStyle(el).display") != "none"
+    page.close()
+
+    assert stored == "light"
+    assert sun_visible
+
+
+# ---------- precedence ("visit X before Y") rules panel ----------
+
+def test_precedence_panel_lets_you_add_and_remove_a_rule(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    for x, y in [(200, 200), (300, 200), (400, 200), (500, 200)]:
+        page.click("#map", position={"x": x, "y": y})
+    page.wait_for_function("clickedPoints.length === 4")
+
+    page.click("#precedenceBtn")
+    page.wait_for_function("document.getElementById('precedencePanel').style.display === 'flex'")
+
+    # 4 points -> point 0 is Start, point 3 is End, so only 1 and 2 are
+    # eligible interior stops for a rule.
+    options = page.eval_on_selector_all("#precUSelect option", "els => els.map(e => e.value)")
+    assert options == ["1", "2"]
+
+    page.select_option("#precUSelect", "1")
+    page.select_option("#precVSelect", "2")
+    page.click("#precAddBtn")
+    assert "Stop 1 before Stop 2" in page.inner_text("#precedenceList")
+    assert page.evaluate("precedenceRules") == [[1, 2]]
+
+    page.click("#precedenceList button")
+    page.wait_for_function("document.getElementById('precedenceList').children.length === 0")
+    page.close()
+    assert True  # reaching here means the remove click worked
+
+
+def test_precedence_panel_rejects_duplicate_and_reversed_rules(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    for x, y in [(200, 200), (300, 200), (400, 200), (500, 200)]:
+        page.click("#map", position={"x": x, "y": y})
+    page.wait_for_function("clickedPoints.length === 4")
+
+    page.click("#precedenceBtn")
+    page.wait_for_function("document.getElementById('precedencePanel').style.display === 'flex'")
+    page.select_option("#precUSelect", "1")
+    page.select_option("#precVSelect", "2")
+    page.click("#precAddBtn")
+
+    page.click("#precAddBtn")  # exact duplicate
+    assert "already exists" in page.inner_text("#precedenceStatus")
+
+    page.select_option("#precUSelect", "2")
+    page.select_option("#precVSelect", "1")
+    page.click("#precAddBtn")  # the reverse of the existing rule
+    status = page.inner_text("#precedenceStatus")
+    rules = page.evaluate("precedenceRules")
+    page.close()
+
+    assert "reverse" in status
+    assert rules == [[1, 2]]  # neither the duplicate nor the reverse got added
+
+
+def test_precedence_button_hides_in_fleet_mode(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    assert page.eval_on_selector("#precedenceBtn", "el => getComputedStyle(el).display") != "none"
+
+    page.select_option("#vehicleSelect", "2")
+    display = page.eval_on_selector("#precedenceBtn", "el => getComputedStyle(el).display")
+    page.close()
+    assert display == "none"
+
+
+def test_precedence_rules_remap_after_a_solve_and_drop_on_stop_removal(live_server, browser):
+    """Exercises the two helpers that keep rules pointing at the right
+    stops as clickedPoints changes shape — no real solve/network needed,
+    same direct-function-call pattern as the other JS-logic tests here."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    remapped = page.evaluate("""
+        () => {
+            precedenceRules = [[1, 3], [2, 3]];
+            _remapPrecedenceAfterSolve([0, 3, 1, 2, 4]); // order[newPos] = oldIdx
+            return precedenceRules;
+        }
+    """)
+    assert remapped == [[2, 1], [3, 1]]
+
+    after_removal = page.evaluate("""
+        () => {
+            precedenceRules = [[1, 4], [2, 5], [5, 6]];
+            _removePrecedenceForRemovedIndex(2);
+            return precedenceRules;
+        }
+    """)
+    page.close()
+    assert after_removal == [[1, 3], [4, 5]]
+
+
+# ---------- per-stop weights (fleet mode "Max load/vehicle") ----------
+
+def test_weights_button_only_appears_in_fleet_mode_with_weighted_capacity(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    # single-vehicle mode: capacityWrap (and weightsBtn inside it) is hidden entirely
+    assert page.eval_on_selector("#capacityWrap", "el => getComputedStyle(el).display") == "none"
+
+    page.select_option("#vehicleSelect", "2")
+    assert page.eval_on_selector("#weightsBtn", "el => getComputedStyle(el).display") == "none"
+
+    page.select_option("#capacityModeSelect", "weight")
+    display = page.eval_on_selector("#weightsBtn", "el => getComputedStyle(el).display")
+    page.close()
+    assert display != "none"
+
+
+def test_weights_panel_lists_every_current_stop_and_saves_edits(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.select_option("#vehicleSelect", "2")
+    page.select_option("#capacityModeSelect", "weight")
+
+    for x, y in [(200, 200), (300, 200), (400, 200)]:
+        page.click("#map", position={"x": x, "y": y})
+    page.wait_for_function("clickedPoints.length === 3")
+
+    page.click("#weightsBtn")
+    page.wait_for_function("document.getElementById('weightsPanel').style.display === 'flex'")
+
+    # point 0 is the depot in fleet mode; 1 and 2 are the (only) real stops
+    rows = page.eval_on_selector_all("#weightsList li input", "els => els.map(e => e.dataset.idx)")
+    assert rows == ["1", "2"]
+
+    page.fill("#weightsList input[data-idx='2']", "25")
+    page.eval_on_selector("#weightsList input[data-idx='2']", "el => el.dispatchEvent(new Event('input'))")
+    weights = page.evaluate("stopWeights")
+    page.close()
+    assert weights == {"2": 25}
+
+
+def test_stop_weight_helper_drops_removed_index_and_shifts_others(live_server, browser):
+    """Same direct-function-call pattern as the precedence remap/drop test
+    above: exercise _removeWeightForRemovedIndex with synthetic stopWeights
+    state, no real map interaction needed."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    after_removal = page.evaluate("""
+        () => {
+            stopWeights = {1: 10, 2: 20, 3: 30};
+            _removeWeightForRemovedIndex(2);
+            return stopWeights;
+        }
+    """)
+    page.close()
+    assert after_removal == {"1": 10, "2": 30}

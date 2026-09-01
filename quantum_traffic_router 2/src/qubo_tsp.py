@@ -231,7 +231,9 @@ def open_path_length(path: list[int], W: np.ndarray) -> float:
     return sum(W[path[i], path[i + 1]] for i in range(len(path) - 1))
 
 
-def build_open_path_bqm(W: np.ndarray, start_idx: int, end_idx: int) -> dimod.BinaryQuadraticModel | None:
+def build_open_path_bqm(
+    W: np.ndarray, start_idx: int, end_idx: int, precedence: list[tuple[int, int]] | None = None,
+) -> dimod.BinaryQuadraticModel | None:
     """QUBO for 'shortest path visiting every waypoint exactly once, from a
     FIXED start to a FIXED end' (a Hamiltonian path, not a cycle) — used
     when a user has clicked a distinct start point, end point, and zero or
@@ -247,6 +249,17 @@ def build_open_path_bqm(W: np.ndarray, start_idx: int, end_idx: int) -> dimod.Bi
     true by construction ("start is at position 0", "end is at position
     n-1"), with zero risk of the annealer finding a low-energy-but-invalid
     sample — only the ordering of the interior stops is actually searched.
+
+    `precedence`: optional list of (u, v) interior-stop-index pairs meaning
+    "u must be visited before v" — the same real-world feature
+    build_tsp_bqm already offers for the closed-loop case (see its own
+    docstring and add_precedence_penalty), extended here to the live
+    click-anywhere app's fixed-start/fixed-end formulation. u/v referring to
+    start_idx or end_idx is handled by the caller (see app.py's
+    validation): a pair that's automatically true by construction (anything
+    "after start" or "before end") is silently skipped rather than wasting
+    penalty terms on it, since start/end aren't even decision variables
+    here.
 
     Returns None for n <= 2 (start and end only, or a degenerate single
     point) — there's nothing to optimize in that case; the caller should
@@ -289,7 +302,32 @@ def build_open_path_bqm(W: np.ndarray, start_idx: int, end_idx: int) -> dimod.Bi
         for u, v in itertools.permutations(middle, 2):
             bqm.add_quadratic(_var(u, t, n), _var(v, t + 1, n), W[u, v])
 
+    # optional constraint: precedence ("u before v") among interior stops.
+    # start_idx/end_idx are fixed by construction (position 0 / n-1), never
+    # decision variables, so a pair naming either of them is either always
+    # true (start-before-anything, anything-before-end — skip, nothing to
+    # penalize) or impossible (app.py rejects those before this is called).
+    if precedence:
+        for (u, v) in precedence:
+            if u == start_idx or v == end_idx:
+                continue
+            _add_open_path_precedence_penalty(bqm, u, v, n, penalty=A)
+
     return bqm
+
+
+def _add_open_path_precedence_penalty(bqm: dimod.BinaryQuadraticModel, u: int, v: int, n: int, penalty: float) -> None:
+    """Like add_precedence_penalty, but for the open-path formulation,
+    where only INTERIOR positions 1..n-2 exist as decision variables at all
+    (position 0 and n-1 belong to the fixed start/end and were never given
+    variables) — so this only ever touches variables build_open_path_bqm
+    actually created, instead of accidentally introducing unconstrained
+    phantom variables at position 0 or n-1 the way reusing
+    add_precedence_penalty's full range(n) would."""
+    for t_u in range(1, n - 1):
+        for t_v in range(1, n - 1):
+            if t_u >= t_v:
+                bqm.add_quadratic(_var(u, t_u, n), _var(v, t_v, n), penalty)
 
 
 def _decode_open_path(sample: dict, n: int, start_idx: int, end_idx: int, middle: list[int]) -> list[int] | None:
@@ -311,9 +349,14 @@ def _decode_open_path(sample: dict, n: int, start_idx: int, end_idx: int, middle
 
 def solve_open_path_quantum_inspired(
     W: np.ndarray, start_idx: int, end_idx: int, num_reads: int = 400, seed: int = 1,
+    precedence: list[tuple[int, int]] | None = None,
 ) -> dict:
     """Solve the fixed-start/fixed-end routing problem via QUBO + simulated
-    annealing. Mirrors solve_quantum_inspired()'s return shape."""
+    annealing. Mirrors solve_quantum_inspired()'s return shape.
+
+    `precedence`: see build_open_path_bqm — optional "u before v" pairs
+    baked directly into the same QUBO, same as the closed-loop solver.
+    """
     n = W.shape[0]
     middle = [v for v in range(n) if v not in (start_idx, end_idx)]
 
@@ -322,27 +365,49 @@ def solve_open_path_quantum_inspired(
         return {"path": path, "cost": open_path_length(path, W), "wall_seconds": 0.0,
                 "feasible_reads": 1, "total_reads": 1}
 
-    bqm = build_open_path_bqm(W, start_idx, end_idx)
+    bqm = build_open_path_bqm(W, start_idx, end_idx, precedence=precedence)
     sampler = SimulatedAnnealingSampler()
 
     t0 = time.perf_counter()
     sampleset = sampler.sample(bqm, num_reads=num_reads, seed=seed)
     wall_seconds = time.perf_counter() - t0
 
+    # When precedence is given, prefer the best feasible read that actually
+    # satisfies it — the penalty makes violating it extremely costly, so in
+    # practice the lowest-energy feasible reads already satisfy it, but this
+    # makes that a checked guarantee rather than an assumption. best_any
+    # tracks the best feasible read regardless, as a last-resort fallback.
     best_path, best_cost, feasible_count = None, float("inf"), 0
+    best_path_any, best_cost_any = None, float("inf")
     for sample, energy in sampleset.data(fields=["sample", "energy"]):
         path = _decode_open_path(sample, n, start_idx, end_idx, middle)
         if path is None:
             continue
         feasible_count += 1
         cost = open_path_length(path, W)
+        if cost < best_cost_any:
+            best_path_any, best_cost_any = path, cost
+        if precedence and not satisfies_precedence(path, precedence):
+            continue
         if cost < best_cost:
             best_path, best_cost = path, cost
+
+    if best_path is None and best_path_any is not None:
+        # Every feasible read violated precedence — extremely unlikely given
+        # the penalty weight, but fall back to the best feasible read rather
+        # than dropping into the plain nearest-neighbor fallback below,
+        # which doesn't know about precedence at all.
+        best_path, best_cost = best_path_any, best_cost_any
 
     if best_path is None:
         # fallback: nearest-neighbor greedy over the interior stops, so the
         # demo never crashes even in the extremely unlikely case that not one
-        # of num_reads samples was a valid assignment
+        # of num_reads samples was a valid assignment. Precedence-aware via
+        # the same post-hoc repair the classical baseline uses (see
+        # baseline.nearest_neighbor_2opt_open_path_with_precedence_repair) —
+        # this code path is only ever reached if the annealer produced zero
+        # valid permutations at all, so it doesn't need to be more than "not
+        # wrong."
         remaining = set(middle)
         path, current = [start_idx], start_idx
         while remaining:
@@ -351,6 +416,11 @@ def solve_open_path_quantum_inspired(
             remaining.remove(nxt)
             current = nxt
         path.append(end_idx)
+        if precedence:
+            for (u, v) in precedence:
+                if not satisfies_precedence(path, [(u, v)]):
+                    path = [c for c in path if c != v]
+                    path.insert(path.index(u) + 1, v)
         best_path, best_cost = path, open_path_length(path, W)
 
     return {

@@ -79,16 +79,31 @@ def render_route_map(Gc, waypoints: list[str], tour: list[int], out_path: str, t
 
 
 def render_comparison_chart(rows1: list[dict], out_path: str) -> None:
-    """Bar chart: 2-opt vs QUBO+SA cost across problem sizes (Experiment 1)."""
+    """Bar chart: 2-opt vs QUBO+SA cost across problem sizes (Experiment 1),
+    plus a third Google OR-Tools bar whenever that optional comparison ran
+    (see src/ortools_baseline.py / benchmark.py) — a real industrial solver
+    alongside the hand-rolled 2-opt baseline, so the "even the strong
+    baseline wins here" honest finding is visible at a glance too, not
+    just in the CSV/markdown report."""
     sizes = [r["n_waypoints"] for r in rows1]
     two_opt = [r["2opt_cost_min"] for r in rows1]
     qubo = [r["qubo_sa_cost_min"] for r in rows1]
+    has_ortools = all("ortools_cost_min" in r for r in rows1) and len(rows1) > 0
 
     x = range(len(sizes))
-    width = 0.35
     fig, ax = plt.subplots(figsize=(7, 4.5))
-    ax.bar([i - width / 2 for i in x], two_opt, width, label="Classical (2-opt)", color="#3498db")
-    ax.bar([i + width / 2 for i in x], qubo, width, label="Quantum-inspired (QUBO + SA)", color="#9b59b6")
+
+    if has_ortools:
+        ortools_costs = [r["ortools_cost_min"] for r in rows1]
+        width = 0.25
+        ax.bar([i - width for i in x], two_opt, width, label="Classical (2-opt)", color="#3498db")
+        ax.bar(list(x), qubo, width, label="Quantum-inspired (QUBO + SA)", color="#9b59b6")
+        ax.bar([i + width for i in x], ortools_costs, width, label="Google OR-Tools", color="#2ecc71")
+    else:
+        width = 0.35
+        ax.bar([i - width / 2 for i in x], two_opt, width, label="Classical (2-opt)", color="#3498db")
+        ax.bar([i + width / 2 for i in x], qubo, width, label="Quantum-inspired (QUBO + SA)", color="#9b59b6")
+
     ax.set_xticks(list(x))
     ax.set_xticklabels([str(s) for s in sizes])
     ax.set_xlabel("Number of waypoints")

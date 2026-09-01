@@ -151,6 +151,35 @@ def nearest_neighbor_2opt_open_path(W: np.ndarray, start_idx: int, end_idx: int)
     return {"path": path, "cost": open_path_length(path, W), "wall_seconds": time.perf_counter() - t0}
 
 
+def nearest_neighbor_2opt_open_path_with_precedence_repair(
+    W: np.ndarray, start_idx: int, end_idx: int, precedence: list[tuple[int, int]],
+) -> dict:
+    """Open-path counterpart to nearest_neighbor_2opt_with_precedence_repair
+    above — same honest point, just for the fixed-start/fixed-end case: a
+    classical local-search heuristic has no built-in notion of precedence,
+    so satisfying a new "visit X before Y" rule means bolting on a repair
+    step after the fact, one rule at a time, rather than composing for free
+    the way qubo_tsp.build_open_path_bqm's precedence penalty does."""
+    from qubo_tsp import open_path_length, satisfies_precedence
+
+    result = nearest_neighbor_2opt_open_path(W, start_idx, end_idx)
+    path = result["path"]
+    repaired = False
+
+    for (u, v) in precedence:
+        if not satisfies_precedence(path, [(u, v)]):
+            repaired = True
+            path = [c for c in path if c != v]
+            insert_at = path.index(u) + 1
+            path.insert(insert_at, v)
+
+    result["path"] = path
+    result["cost"] = open_path_length(path, W)
+    result["repaired"] = repaired
+    result["still_violates_precedence"] = not satisfies_precedence(path, precedence)
+    return result
+
+
 if __name__ == "__main__":
     from city_graph import build_demo_graph
     from congestion import apply_congestion

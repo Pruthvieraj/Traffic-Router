@@ -72,6 +72,31 @@ def test_single_interior_stop_does_not_crash():
     _assert_valid_open_path(result["path"], 3, 0, 2)
 
 
+# ---------- precedence pass-through / honest scope limit ----------
+
+def test_precedence_is_honored_on_the_single_cluster_passthrough():
+    from qubo_tsp import satisfies_precedence
+
+    n = 6
+    W = _random_matrix(n, seed=3)
+    precedence = [(2, 4)]
+    result = solve_open_path_scalable(W, 0, n - 1, method="classical", cluster_size=9, precedence=precedence)
+    _assert_valid_open_path(result["path"], n, 0, n - 1)
+    assert satisfies_precedence(result["path"], precedence)
+    assert result["clusters_used"] == 1
+
+
+def test_precedence_above_cluster_size_raises_instead_of_silently_ignoring():
+    """Once stops must be split across independently-solved clusters, a
+    cross-cluster precedence pair can't be reliably enforced by the
+    stitching step — this must fail loudly rather than quietly return a
+    route that doesn't actually honor the constraint it was asked for."""
+    n = 12
+    W = _random_matrix(n, seed=4)
+    with pytest.raises(ValueError):
+        solve_open_path_scalable(W, 0, n - 1, method="classical", cluster_size=8, precedence=[(2, 4)])
+
+
 # ---------- solve_multi_vehicle (the multi-vehicle dispatch demo) ----------
 
 def _assert_valid_closed_loop(path, depot):
@@ -232,3 +257,95 @@ def test_capacity_exactly_evenly_divisible_needs_no_extra_vehicles():
     assert result["n_vehicles"] == 2  # 6 stops / capacity 3 = exactly 2, no need to raise it
     for v in result["vehicles"]:
         assert v["stops"] <= 3
+
+
+# ---------- per-stop demand weights (demands + vehicle_capacity) ----------
+
+def test_demand_capacity_is_actually_enforced_on_every_vehicle():
+    """The weighted counterpart to test_capacity_is_actually_enforced_on_
+    every_vehicle: no vehicle's TOTAL DEMAND (not stop count) may exceed
+    vehicle_capacity, even though a few heavy stops could otherwise land
+    on the same vehicle as a plain stop-count cap would allow."""
+    n = 11  # depot (0) + 10 stops
+    W = _random_matrix(n, seed=42)
+    stop_indices = list(range(1, n))
+    demands = {i: 40.0 for i in stop_indices}
+    demands[3] = 90.0  # one unusually heavy stop
+    result = solve_multi_vehicle(
+        W, 0, stop_indices, n_vehicles=2, method="classical", demands=demands, vehicle_capacity=100.0,
+    )
+    for v in result["vehicles"]:
+        assigned = v["path"][1:-1]
+        total = sum(demands[s] for s in assigned)
+        assert total <= 100.0 + 1e-9
+        assert v["demand"] == pytest.approx(total)
+    all_assigned = sorted(s for v in result["vehicles"] for s in v["path"][1:-1])
+    assert all_assigned == stop_indices
+
+
+def test_demand_capacity_auto_raises_vehicle_count_when_too_small():
+    n = 11
+    W = _random_matrix(n, seed=7)
+    stop_indices = list(range(1, n))
+    demands = {i: 30.0 for i in stop_indices}  # 10 stops * 30 = 300 total demand
+    result = solve_multi_vehicle(
+        W, 0, stop_indices, n_vehicles=1, method="classical", demands=demands, vehicle_capacity=100.0,
+    )
+    assert result["n_vehicles"] >= 3  # ceil(300 / 100) = 3
+    for v in result["vehicles"]:
+        assert sum(demands[s] for s in v["path"][1:-1]) <= 100.0 + 1e-9
+
+
+def test_demand_without_explicit_capacity_balances_by_total_demand():
+    """With demands given but no vehicle_capacity, the default fair-share
+    balancing should target total DEMAND per vehicle, not stop count — a
+    vehicle with 2 heavy stops and one with 6 light stops can both be
+    'fair' shares even though their stop counts differ a lot."""
+    n = 9  # depot (0) + 8 stops
+    W = _random_matrix(n, seed=5)
+    stop_indices = list(range(1, n))
+    demands = {i: (100.0 if i in (1, 2) else 10.0) for i in stop_indices}  # total = 200 + 60 = 260
+    result = solve_multi_vehicle(W, 0, stop_indices, n_vehicles=2, method="classical", demands=demands)
+    assert result["n_vehicles"] == 2
+    totals = sorted(round(v["demand"], 6) for v in result["vehicles"])
+    # fair share target is 130 each; the greedy repair should get reasonably close
+    assert max(totals) <= 260.0
+    assert sum(totals) == pytest.approx(260.0)
+
+
+def test_demand_rejects_a_stop_heavier_than_vehicle_capacity():
+    n = 5
+    W = _random_matrix(n, seed=2)
+    stop_indices = list(range(1, n))
+    demands = {i: 10.0 for i in stop_indices}
+    demands[2] = 500.0  # impossible for any vehicle to carry, regardless of fleet size
+    with pytest.raises(ValueError):
+        solve_multi_vehicle(W, 0, stop_indices, n_vehicles=2, method="classical", demands=demands, vehicle_capacity=100.0)
+
+
+def test_demand_rejects_missing_entries():
+    n = 5
+    W = _random_matrix(n, seed=2)
+    stop_indices = list(range(1, n))
+    demands = {1: 10.0, 2: 20.0}  # missing entries for 3 and 4
+    with pytest.raises(ValueError):
+        solve_multi_vehicle(W, 0, stop_indices, n_vehicles=2, method="classical", demands=demands, vehicle_capacity=100.0)
+
+
+def test_demands_and_max_stops_per_vehicle_together_is_rejected():
+    n = 5
+    W = _random_matrix(n, seed=2)
+    stop_indices = list(range(1, n))
+    demands = {i: 10.0 for i in stop_indices}
+    with pytest.raises(ValueError):
+        solve_multi_vehicle(
+            W, 0, stop_indices, n_vehicles=2, method="classical",
+            demands=demands, max_stops_per_vehicle=2,
+        )
+
+
+def test_no_demands_leaves_demand_field_none():
+    n = 5
+    W = _random_matrix(n, seed=2)
+    result = solve_multi_vehicle(W, 0, list(range(1, n)), n_vehicles=2, method="classical")
+    assert all(v["demand"] is None for v in result["vehicles"])

@@ -5,12 +5,14 @@ running server or any network access (OSRM calls happen client-side, so
 
 import pytest
 
+import analytics
 import app as app_module
 
 
 @pytest.fixture
 def client():
     app_module.app.testing = True
+    analytics._reset_for_tests()
     return app_module.app.test_client()
 
 
@@ -117,6 +119,71 @@ def test_solve_rejects_malformed_incident_pairs(client):
     assert resp.status_code == 400
 
 
+# ---------- precedence ("visit X before Y") constraints ----------
+
+def _six_point_matrix():
+    # 0 = start, 5 = end; 1..4 are interior stops.
+    return [[abs(i - j) * 120.0 for j in range(6)] for i in range(6)]
+
+
+def test_solve_with_precedence_satisfies_it_and_flags_the_response(client):
+    matrix = _six_point_matrix()
+    resp = client.post("/api/solve", json={
+        "matrix": matrix, "method": "quantum", "precedence": [[3, 1]],  # forces a non-default order
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    order = data["order"]
+    assert order.index(3) < order.index(1)
+    assert data["precedence_applied"] is True
+    assert data["precedence_satisfied"] is True
+
+
+def test_solve_without_precedence_flags_it_false_but_satisfied(client):
+    matrix = _six_point_matrix()
+    resp = client.post("/api/solve", json={"matrix": matrix, "method": "classical"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["precedence_applied"] is False
+    assert data["precedence_satisfied"] is True  # vacuously true — nothing to violate
+
+
+def test_solve_rejects_precedence_pair_requiring_something_after_end(client):
+    matrix = _six_point_matrix()
+    resp = client.post("/api/solve", json={"matrix": matrix, "method": "classical", "precedence": [[5, 2]]})
+    assert resp.status_code == 400
+    assert "End" in resp.get_json()["error"]
+
+
+def test_solve_rejects_precedence_pair_requiring_something_before_start(client):
+    matrix = _six_point_matrix()
+    resp = client.post("/api/solve", json={"matrix": matrix, "method": "classical", "precedence": [[2, 0]]})
+    assert resp.status_code == 400
+    assert "Start" in resp.get_json()["error"]
+
+
+def test_solve_rejects_precedence_pair_with_out_of_range_index(client):
+    matrix = _six_point_matrix()
+    resp = client.post("/api/solve", json={"matrix": matrix, "method": "classical", "precedence": [[2, 99]]})
+    assert resp.status_code == 400
+
+
+def test_solve_rejects_precedence_above_cluster_size(client):
+    n = 20
+    matrix = [[abs(i - j) * 37.0 for j in range(n)] for i in range(n)]
+    resp = client.post("/api/solve", json={"matrix": matrix, "method": "classical", "precedence": [[2, 4]]})
+    assert resp.status_code == 400
+    assert "cluster" in resp.get_json()["error"].lower()
+
+
+def test_solve_precedence_trivially_true_pairs_with_start_and_end_are_allowed(client):
+    matrix = _six_point_matrix()
+    resp = client.post("/api/solve", json={
+        "matrix": matrix, "method": "classical", "precedence": [[0, 3], [2, 5]],
+    })
+    assert resp.status_code == 200
+
+
 # ---------- /api/solve_fleet (multi-vehicle dispatch demo) ----------
 
 def test_solve_fleet_valid_request(client):
@@ -174,3 +241,159 @@ def test_solve_fleet_rejects_invalid_max_stops_per_vehicle(client):
     matrix = [[0, 1, 2, 3], [1, 0, 4, 5], [2, 4, 0, 6], [3, 5, 6, 0]]
     resp = client.post("/api/solve_fleet", json={"matrix": matrix, "method": "classical", "max_stops_per_vehicle": 0})
     assert resp.status_code == 400
+
+
+# ---------- per-stop demand weights (demands + vehicle_capacity) ----------
+
+def _six_stop_fleet_matrix():
+    n = 7  # depot (0) + 6 stops
+    return [[abs(i - j) * 80.0 for j in range(n)] for i in range(n)]
+
+
+def test_solve_fleet_enforces_vehicle_capacity_by_demand(client):
+    matrix = _six_stop_fleet_matrix()
+    demands = {"1": 40, "2": 40, "3": 40, "4": 40, "5": 40, "6": 40}
+    resp = client.post("/api/solve_fleet", json={
+        "matrix": matrix, "method": "classical", "n_vehicles": 2,
+        "demands": demands, "vehicle_capacity": 100,
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["vehicle_capacity"] == 100
+    for v in data["vehicles"]:
+        assert v["demand"] <= 100 + 1e-6
+    assigned = [s for v in data["vehicles"] for s in v["order"][1:-1]]
+    assert sorted(assigned) == [1, 2, 3, 4, 5, 6]
+
+
+def test_solve_fleet_fills_in_missing_demands_as_default_weight_one(client):
+    """A client that only sends weights for the stops the user actually
+    edited (not every stop) should have the rest default to 1, not error
+    or silently drop them."""
+    matrix = _six_stop_fleet_matrix()
+    resp = client.post("/api/solve_fleet", json={
+        "matrix": matrix, "method": "classical", "n_vehicles": 2,
+        "demands": {"1": 5}, "vehicle_capacity": 10,
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assigned = [s for v in data["vehicles"] for s in v["order"][1:-1]]
+    assert sorted(assigned) == [1, 2, 3, 4, 5, 6]
+
+
+def test_solve_fleet_rejects_demands_together_with_max_stops_per_vehicle(client):
+    matrix = _six_stop_fleet_matrix()
+    resp = client.post("/api/solve_fleet", json={
+        "matrix": matrix, "method": "classical",
+        "demands": {"1": 1}, "max_stops_per_vehicle": 2,
+    })
+    assert resp.status_code == 400
+
+
+def test_solve_fleet_rejects_a_stop_heavier_than_vehicle_capacity(client):
+    matrix = _six_stop_fleet_matrix()
+    demands = {str(i): 10 for i in range(1, 7)}
+    demands["3"] = 500  # impossible for any vehicle
+    resp = client.post("/api/solve_fleet", json={
+        "matrix": matrix, "method": "classical", "demands": demands, "vehicle_capacity": 100,
+    })
+    assert resp.status_code == 400
+
+
+def test_solve_fleet_rejects_malformed_demands(client):
+    matrix = _six_stop_fleet_matrix()
+    resp = client.post("/api/solve_fleet", json={
+        "matrix": matrix, "method": "classical", "demands": [1, 2, 3], "vehicle_capacity": 10,
+    })
+    assert resp.status_code == 400
+
+
+def test_solve_fleet_without_demands_leaves_demand_field_null(client):
+    matrix = _six_stop_fleet_matrix()
+    resp = client.post("/api/solve_fleet", json={"matrix": matrix, "method": "classical", "n_vehicles": 2})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert all(v["demand"] is None for v in data["vehicles"])
+    assert data["vehicle_capacity"] is None
+
+
+# ---------- /api/analytics ----------
+
+def test_analytics_starts_at_zero(client):
+    resp = client.get("/api/analytics")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["total_solves"] == 0
+    assert data["solves_by_endpoint"] == {"solve": 0, "solve_fleet": 0}
+    assert data["solves_by_method"] == {"quantum": 0, "classical": 0}
+    assert data["errors"] == 0
+    assert data["avg_solve_ms"] is None
+    assert "note" in data  # the honest-scope caveat must always be present, not just on request
+
+
+def test_analytics_counts_a_successful_solve_by_endpoint_and_method(client):
+    matrix = [[0, 300, 600], [300, 0, 400], [600, 400, 0]]
+    client.post("/api/solve", json={"matrix": matrix, "method": "classical"})
+    client.post("/api/solve", json={"matrix": matrix, "method": "quantum"})
+
+    data = client.get("/api/analytics").get_json()
+    assert data["total_solves"] == 2
+    assert data["solves_by_endpoint"] == {"solve": 2, "solve_fleet": 0}
+    assert data["solves_by_method"] == {"quantum": 1, "classical": 1}
+    assert data["avg_solve_ms"] is not None and data["avg_solve_ms"] >= 0
+
+
+def test_analytics_counts_a_successful_fleet_solve(client):
+    matrix = _six_stop_fleet_matrix()
+    client.post("/api/solve_fleet", json={"matrix": matrix, "method": "classical", "n_vehicles": 2})
+
+    data = client.get("/api/analytics").get_json()
+    assert data["total_solves"] == 1
+    assert data["solves_by_endpoint"] == {"solve": 0, "solve_fleet": 1}
+
+
+def test_analytics_counts_errors_from_early_validation_and_from_solver_exceptions(client):
+    # Fails the earliest input check (too few points) — never reaches the try/except.
+    client.post("/api/solve", json={"matrix": [[0, 1]]})
+    # Fails a later, solver-layer ValueError (precedence above cluster size).
+    client.post("/api/solve", json={
+        "matrix": [[0] * 12 for _ in range(12)],
+        "precedence": [[1, 2]],
+    })
+
+    data = client.get("/api/analytics").get_json()
+    assert data["errors"] == 2
+    assert data["total_solves"] == 0  # neither request should also count as a solve
+
+
+def test_analytics_flags_incident_precedence_and_demand_weight_usage(client):
+    matrix = [[0, 300, 600], [300, 0, 400], [600, 400, 0]]
+    client.post("/api/solve", json={"matrix": matrix, "incident_pairs": [[0, 1]]})
+    client.post("/api/solve", json={"matrix": matrix, "precedence": [[1, 2]]})
+
+    fleet_matrix = _six_stop_fleet_matrix()
+    client.post("/api/solve_fleet", json={
+        "matrix": fleet_matrix, "method": "classical", "n_vehicles": 2,
+        "demands": {str(i): 10 for i in range(1, 7)}, "vehicle_capacity": 100,
+    })
+
+    data = client.get("/api/analytics").get_json()
+    assert data["incident_simulations"] == 1
+    assert data["precedence_requests"] == 1
+    assert data["demand_weight_requests"] == 1
+
+
+def test_analytics_response_never_leaks_per_request_data(client):
+    """The whole point of keeping this to aggregate counts: nothing about
+    an individual request (its matrix, its IP, a timestamp) should ever
+    show up in the snapshot, no matter what was just solved."""
+    matrix = [[0, 300, 600], [300, 0, 400], [600, 400, 0]]
+    client.post("/api/solve", json={"matrix": matrix, "method": "classical"})
+
+    data = client.get("/api/analytics").get_json()
+    expected_keys = {
+        "since", "uptime_seconds", "total_solves", "solves_by_endpoint",
+        "solves_by_method", "avg_solve_ms", "errors", "incident_simulations",
+        "precedence_requests", "demand_weight_requests", "note",
+    }
+    assert set(data.keys()) == expected_keys

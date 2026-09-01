@@ -1,8 +1,13 @@
 import numpy as np
 import pytest
 
-from baseline import brute_force_optimal, nearest_neighbor_2opt, nearest_neighbor_2opt_open_path
-from qubo_tsp import open_path_length
+from baseline import (
+    brute_force_optimal,
+    nearest_neighbor_2opt,
+    nearest_neighbor_2opt_open_path,
+    nearest_neighbor_2opt_open_path_with_precedence_repair,
+)
+from qubo_tsp import open_path_length, satisfies_precedence
 
 
 def _random_matrix(n, seed):
@@ -28,6 +33,19 @@ def test_open_path_baseline_is_a_valid_permutation(seed):
     assert result["path"][-1] == n - 1
     assert sorted(result["path"]) == list(range(n))
     assert result["cost"] == pytest.approx(open_path_length(result["path"], W))
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_open_path_precedence_repair_produces_a_valid_permutation_that_satisfies_it(seed):
+    n = 6
+    W = _random_matrix(n, seed)
+    precedence = [(2, 4)]
+    result = nearest_neighbor_2opt_open_path_with_precedence_repair(W, 0, n - 1, precedence)
+    assert result["path"][0] == 0
+    assert result["path"][-1] == n - 1
+    assert sorted(result["path"]) == list(range(n))
+    assert satisfies_precedence(result["path"], precedence)
+    assert result["still_violates_precedence"] is False
 
 
 def test_brute_force_finds_a_valid_tour():

@@ -29,6 +29,25 @@ gunicorn>=21.2
 # script, not part of the app). Install it separately when you want that:
 #     pip install dwave-system
 #
+# ortools is also NOT listed above on purpose — it's a large native
+# dependency used only by src/ortools_baseline.py, an optional third
+# comparison point in the benchmark suite (Google's own production
+# routing solver, alongside the hand-rolled 2-opt baseline). Neither the
+# live app nor the core benchmark needs it; tests/test_ortools_baseline.py
+# and benchmark.py both skip that comparison cleanly when it's absent.
+# Install it separately when you want that comparison:
+#     pip install ortools
+#
+# qiskit is also NOT listed above on purpose — it's used only by
+# src/qaoa_solver.py, a second "quantum-inspired" solver (QAOA, a
+# gate-based variational quantum circuit, run on a classical statevector
+# simulator) for the same QUBO the live app already builds, kept as a
+# research/pitch-deck credibility module rather than a live-app dependency
+# (see qaoa_solver.py's own docstring for the honest reasons why it isn't
+# wired into /api/solve). tests/test_qaoa_solver.py and run_qaoa_demo.py
+# both skip cleanly when it's absent. Install it separately:
+#     pip install qiskit
+#
 # pytest is also NOT listed above — it's a dev-only tool for running the
 # tests/ suite, not something the app or a deploy needs. Install it
 # separately to run tests:
@@ -45,3 +64,10 @@ gunicorn>=21.2
 # suite. Install it separately to run those tests:
 #     pip install playwright && playwright install --with-deps chromium
 #     pytest tests/test_layout.py -v
+pyyaml>=6.0
+
+# pyyaml is listed above (not just dev/CI-only) because tests/test_openapi_spec.py
+# needs it to parse openapi.yaml, and it's tiny/pure-Python with no native
+# build step — unlike playwright/ortools/qiskit, keeping it out of the main
+# requirements list would buy no real benefit and just makes that one test
+# silently skip more often than it should.

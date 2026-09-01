@@ -48,10 +48,11 @@ below) and finishes in under a minute. Outputs land in `output/`:
 | **`multi_city_map.html`** | **The flagship demo** — one page, a city dropdown covering 18 cities across India, a satellite/street basemap toggle, a classical-vs-quantum-inspired route toggle, and a "simulate disruption" button. Just double-click it. |
 | `route_map.html` | Interactive map of a 6-stop Bengaluru delivery route at evening rush hour |
 | `route_map_after_spike.html` | The same route re-optimized after a simulated accident/closure |
-| `comparison_chart.png` | Experiment 1 chart: classical vs quantum-inspired, plain routing |
+| `comparison_chart.png` | Experiment 1 chart: classical vs quantum-inspired (and Google OR-Tools, when installed) on plain routing |
 | `constraint_chart.png` | Experiment 2 chart: the one that actually matters — see below |
 | `report.md` | Full numeric results, in the wording used in the sections below |
 | `experiment_1_unconstrained.csv`, `experiment_2_constrained.csv` | Raw data behind both charts |
+| `pitch_deck.pptx` | A 12-slide pitch deck, generated from the CSVs above — see "A pitch deck, generated from the project's own real numbers" below (run `node generate_pitch_deck.js` separately; not produced by `main.py` itself) |
 
 ### About `multi_city_map.html` — satellite maps and the multi-city toggle
 
@@ -277,12 +278,40 @@ vehicle's stop count `<= cap`, every stop still assigned exactly once, and
 `n_vehicles` genuinely rising when the requested fleet is too small), and
 it's wired end-to-end through `/api/solve_fleet`'s `max_stops_per_vehicle`
 field. **Said plainly:** this is still not a full capacitated VRP solver —
-no time windows, no per-stop demand weights (a "capacity" here means stop
-*count*, not delivery volume/weight), no simultaneous joint optimization
-across vehicles. What it proves is that the underlying solver and
-architecture generalize past a single vehicle *with* a real constraint
-enforced on top, which is the real gap between a TSP demo and a fleet
-dispatch system, without dressing this up as more than it is.
+no time windows, no simultaneous joint optimization across vehicles. What
+it proves is that the underlying solver and architecture generalize past a
+single vehicle *with* a real constraint enforced on top, which is the real
+gap between a TSP demo and a fleet dispatch system, without dressing this
+up as more than it is.
+
+**Per-stop demand weights — capacity by load, not just stop count.** The
+cap above only means something if every stop is equally "heavy." Real
+deliveries aren't — a crate of vegetables and a pallet of cement don't take
+the same truck space. The "Capacity mode" dropdown next to "Max/vehicle"
+switches that field's meaning from a stop *count* to a total *weight*
+limit, and a "Weights" button opens a panel listing every current stop
+with an editable weight (default 1). The same `matrix`/`n_vehicles`
+request now carries `demands` (a `{stop_index: weight}` map) and
+`vehicle_capacity`, and `solve_multi_vehicle` in `src/clustering.py`
+enforces the cap on total demand per vehicle, not stop count
+(`_cluster_size` sums weights instead of counting stops when demands are
+given). **A real bin-packing subtlety, caught by the test suite rather
+than shipped broken:** `ceil(total_demand / vehicle_capacity)` is only a
+*lower bound* on the vehicles needed — with uneven weights (say nine
+40kg stops and one 90kg stop, capacity 100), the naive ceiling
+undercounts, because clustering-then-rebalancing can still leave a
+cluster over the line even when the arithmetic total fits. The fix is a
+retry loop: after clustering and rebalancing, if any vehicle still
+exceeds capacity, `n_vehicles` is incremented and the split redone, up to
+the guaranteed-feasible worst case of one stop per vehicle (every stop's
+own weight is validated against the capacity up front, so that terminal
+state always exists). `tests/test_clustering.py`'s
+`test_demand_capacity_is_actually_enforced_on_every_vehicle` and
+`test_demand_capacity_auto_raises_vehicle_count_when_too_small` are the
+tests that caught this before it shipped. Mutually exclusive with
+`max_stops_per_vehicle` (a vehicle has one capacity, not two competing
+definitions of it); `demands`/`vehicle_capacity` are optional, and a stop
+missing from `demands` defaults to weight 1.
 
 **Basic API hardening.** `/api/solve` and `/api/solve_fleet` are both
 rate-limited to 20 requests/minute per IP (via `flask-limiter`) so a public
@@ -290,6 +319,25 @@ demo URL can't be trivially hammered. This is automatically disabled while
 running the pytest suite (which legitimately calls these endpoints far
 more than 20 times a minute) and degrades gracefully — no rate limiting,
 not a crash — if `flask-limiter` somehow isn't installed.
+
+**A basic analytics endpoint — a live number instead of a claim.**
+`GET /api/analytics` (no auth needed — there's nothing sensitive in an
+aggregate count) returns how many solves this running process has served,
+split by endpoint (`/api/solve` vs `/api/solve_fleet`) and by method
+(quantum vs classical), how many failed, the average solve time, and how
+often the incident/precedence/demand-weight features actually got
+exercised — see `src/analytics.py`. **Said plainly, because this is the
+kind of thing that's easy to oversell:** this is an in-process counter, not
+a database — it resets to zero on every restart (including Render
+free-tier's spin-down/spin-up cycle), and it's per-worker-process (this
+project's `Procfile` runs a single gunicorn worker, so in this specific
+deployment the count really is complete, but it would silently fragment
+across workers if you ever scaled that up without adding shared storage).
+It stores no per-request data whatsoever — no IPs, no matrices, no
+per-call timestamps, only aggregate counts — which is also exactly why it
+needs no auth. `tests/test_app.py`'s analytics tests assert the counters
+actually increment correctly per endpoint/method/flag and that the
+response never grows extra fields beyond the documented aggregate set.
 
 ## The interface — what changed and why
 
@@ -373,6 +421,61 @@ judge's first ten seconds are visual before they're technical:
   behavior locked in (including a real bug this caught during development:
   a naive click-to-toggle implementation closed the tooltip instantly on
   desktop, because a mouse click always fires a hover event first).
+- **Bulk import of stops.** An "Import stops" button opens a panel where
+  you can paste many stops at once — one per line, either a direct
+  `lat, lon` pair (added instantly, no network call) or a plain address
+  (geocoded through the same Nominatim search + fallback logic described
+  above, taking the top match since there's no dropdown to pick from for a
+  bulk paste) — or upload a `.csv`/`.txt` file with the same one-per-line
+  format instead of typing. Lines that can't be placed are reported by
+  name rather than silently dropped, and the panel stays open until every
+  line is either added or clearly explained. See
+  `tests/test_layout.py`'s two bulk-import tests.
+- **Shareable route link.** A "Share" button (enabled once you have 2+
+  pins) copies a URL that encodes your pins plus the selected city,
+  method, hour, and vehicle count — no account, no server-side storage,
+  the state lives entirely in the link. Opening it reconstructs the same
+  map and pins automatically; the recipient still clicks Solve route
+  themselves (the link deliberately doesn't bake in an already-computed
+  route, since OSRM's live travel-time estimates can shift between when a
+  link is shared and when it's opened). See `tests/test_layout.py`'s two
+  share-link tests (encode-then-decode round trip, and restoring straight
+  from a URL).
+- **GPX + printable itinerary export.** Once a single-vehicle route is
+  solved, the stats panel gets two export buttons: "GPX" downloads a
+  standard `.gpx` file (waypoints for each stop plus the real road-
+  following track) that any GPS app, Google Maps, Garmin, or Strava can
+  import — no library needed, it's plain XML built client-side. "Print /
+  PDF" opens a clean, map-free numbered itinerary and calls the browser's
+  own print dialog, whose "Save as PDF" option is the dependency-free path
+  to a PDF for something this simple. Deliberately scoped to single-
+  vehicle routes for this first cut, not fleet mode. See
+  `tests/test_layout.py`'s two export tests.
+- **Dark / light theme toggle.** A sun/moon button in the topbar switches
+  every glass panel, dropdown, and text color between light and dark via
+  CSS custom properties (the dark topbar itself was already dark in both
+  modes — this toggles the map surroundings and floating panels). Defaults
+  to your OS-level dark-mode preference on a first visit, and remembers an
+  explicit choice in `localStorage` after that, applied before first paint
+  so there's no light-then-dark flash on reload. See
+  `tests/test_layout.py`'s two theme tests.
+- **Precedence ("visit X before Y") rules.** A "Precedence" button opens a
+  panel where you can require one stop to be visited before another — a
+  pickup before its matching drop-off, say. This is a real constraint
+  baked directly into the same QUBO/classical solve (extending
+  `build_open_path_bqm` in `src/qubo_tsp.py` to accept `precedence`,
+  mirroring the pattern `build_tsp_bqm` already used for the closed-loop
+  case), not a filter applied to the result afterward. Honest scope: it's
+  single-vehicle only, and only supported up to the same interior-stop
+  count a single QUBO can solve directly (`CLUSTER_SIZE`, 9 by default) —
+  above that, stops get split across independently-solved clusters and a
+  cross-cluster precedence pair can't be reliably enforced, so the API
+  returns a clear 400 rather than silently ignoring it. Rules track the
+  actual stops as the route gets (re-)solved (remapped through the solved
+  order automatically) but are dropped if you add or remove a stop, since
+  positions shift. See `tests/test_qubo_tsp.py`,
+  `tests/test_clustering.py`, `tests/test_app.py`, and
+  `tests/test_layout.py`'s precedence tests.
 - **Small credibility details:** an info icon next to the method selector
   explaining in plain language what "quantum-inspired" actually means
   (simulated annealing on a QUBO, on classical hardware — not real quantum
@@ -498,12 +601,22 @@ The pipeline:
    construction + 2-opt local search) to compare against, plus a
    brute-force exact solver for small instances so we can measure "how far
    from truly optimal" each method gets.
-6. **`src/benchmark.py`** + **`src/visualize.py`** — runs the two
+6. **`src/ortools_baseline.py`** — an optional second, much stronger
+   classical comparison point: Google OR-Tools' actual production routing
+   solver, wired in the same shape as `baseline.py` so `benchmark.py` can
+   drop it straight into Experiment 1. Not a required dependency — see its
+   own docstring for why, and "The honest finding" below for what it adds.
+7. **`src/benchmark.py`** + **`src/visualize.py`** — runs the two
    experiments below and produces the charts and report.
-7. **`src/clustering.py`** — scales the fixed-endpoint solver past what a
+8. **`src/clustering.py`** — scales the fixed-endpoint solver past what a
    single QUBO can handle (see "Scaling past a dozen stops" below), and
    also implements the multi-vehicle dispatch demo (`solve_multi_vehicle`).
-8. **`src/traffic_provider.py`** — the pluggable interface between "a
+9. **`src/qaoa_solver.py`** — an optional second "quantum-inspired" solver
+   for the same QUBO: QAOA, a gate-based variational quantum circuit,
+   simulated classically via Qiskit instead of annealed. See "A second
+   quantum computing paradigm" below for the full honest scope of what
+   this does and doesn't prove.
+10. **`src/traffic_provider.py`** — the pluggable interface between "a
    free-flow travel-time matrix" and "a congestion-adjusted one," so the
    simulated model above can be swapped for a real paid traffic API by
    adding one class here, without touching anything upstream or downstream
@@ -522,19 +635,31 @@ pip install pytest
 pytest tests/ -v
 ```
 
-**155 Python tests** (171 total including the layout suite below), covering
-the QUBO solver, the classical baselines, the clustering/scaling logic,
-the multi-vehicle dispatch demo (including the real per-vehicle capacity
-cap and its auto-raising of vehicle count), the congestion model
-(including the on-demand incident spike), the pluggable traffic-provider
-interface, the pan-India city data (every city has valid India-bounded
-coordinates, enough landmarks for a real route, and a fully connected road
-graph), and the live Flask endpoints — including that a 20-stop request
-(which the old 10-stop limit would have rejected) now succeeds end-to-end,
-that the traffic-awareness fields come back correct for a given simulated
-hour, that an incident spike can actually change the chosen route order
-(not just the displayed number), and that `/api/solve_fleet` assigns every
-stop to exactly one vehicle even under a capacity constraint.
+**238 Python tests** (275 total including the frontend and layout suites
+below), covering the QUBO solver, the classical baselines, the
+clustering/scaling logic, the multi-vehicle dispatch demo (including the
+real per-vehicle capacity cap — by stop count *or* by per-stop demand
+weight — and its auto-raising of vehicle count in either mode), the
+precedence ("visit X before Y") constraint on the open-path solver, the
+congestion model (including the on-demand incident spike), the pluggable
+traffic-provider interface, the pan-India city data (every city has valid
+India-bounded coordinates, enough landmarks for a real route, and a fully
+connected road graph), the OpenAPI spec staying in sync with the real
+Flask responses, an optional Google OR-Tools comparison suite
+(`tests/test_ortools_baseline.py` — matches true brute-force optimal on
+small instances, never scores below it, skips cleanly rather than failing
+when `ortools` isn't installed), an optional QAOA comparison suite
+(`tests/test_qaoa_solver.py` — same never-beats-true-optimal sanity bound,
+plus reliably finding the true optimum on the tiny 1-2-interior-stop cases
+small enough for both QAOA and brute force to be checked directly, skips
+cleanly when `qiskit` isn't installed), and the live Flask endpoints —
+including that a 20-stop
+request (which the old 10-stop limit would have rejected) now succeeds
+end-to-end, that the traffic-awareness fields come back correct for a
+given simulated hour, that an incident spike can actually change the
+chosen route order (not just the displayed number), and that
+`/api/solve_fleet` assigns every stop to exactly one vehicle even under a
+capacity constraint.
 
 There's also a **6-test frontend suite** (`tests/frontend/`) for the one
 piece of frontend logic that used to have zero coverage — the turn-by-turn
@@ -545,7 +670,7 @@ needs only Node.js 18+ (its built-in test runner, no npm install):
 node --test tests/frontend/*.test.js
 ```
 
-**And a 16-test real-browser layout suite** (`tests/test_layout.py`),
+**And a 31-test real-browser layout suite** (`tests/test_layout.py`),
 added after a real bug shipped through a fully green test suite and
 several rounds of manual screenshots: the topbar had a fixed height
 combined with `flex-wrap`, so on a narrower browser window its second row
@@ -622,6 +747,19 @@ project is "faster than classical routing" — a judge or an examiner who
 tests it will find the same result we did, and an unsupported speed claim
 is the fastest way to lose credibility in the Q&A.**
 
+**This isn't just losing to a weak strawman, either.** When `ortools` is
+installed (`pip install ortools` — an optional dependency, see
+`src/ortools_baseline.py`), Experiment 1 also runs Google OR-Tools' actual
+production routing solver — the same solver family behind real-world route
+optimization products, not a hand-rolled student-project heuristic. It
+finds the exact optimum on every instance small enough for brute force to
+verify, and matches or beats the hand-rolled 2-opt baseline throughout.
+Reporting that honestly matters: it rules out "maybe a stronger classical
+baseline would've lost" as an excuse, and confirms the real story is what
+Experiment 2 says — the quantum-inspired formulation's advantage shows up
+once real constraints enter the problem, not on plain TSP where classical
+local search (of any quality) already excels.
+
 **Experiment 2 (routing with one real dispatch rule added) — this is the
 actual claim:** real delivery dispatch always has rules beyond "shortest
 path" — a pickup before its matching drop-off, a stop that must happen
@@ -691,6 +829,75 @@ paths (no `dwave-system` installed, or no/invalid token) with a clear
 message rather than a stack trace, so there's nothing to debug — if it
 doesn't print a QPU chip ID, the printed message says exactly why.
 
+## A second quantum computing paradigm: QAOA (optional, no account needed)
+
+Everything above — annealing (simulated or real D-Wave hardware) — is one
+half of how quantum computing research approaches combinatorial
+optimization. The other major paradigm is **gate-based variational
+circuits**, and QAOA (the Quantum Approximate Optimization Algorithm) is
+the standard one for exactly this kind of problem. `src/qaoa_solver.py`
+takes the same `build_open_path_bqm` QUBO the live app and the annealing
+solver both already use, converts it to Ising form (`dimod`'s own
+BINARY→SPIN conversion — no hand-derived coefficients), and builds the
+actual QAOA circuit explicitly (alternating cost/mixer unitaries as
+`RZ`/`RZZ`/`RX` gates, written out rather than hidden behind a framework
+call) using Qiskit's current V2 primitives. No account or hardware access
+needed — `pip install qiskit` and run:
+
+```
+python3 run_qaoa_demo.py
+```
+
+This prints brute-force-optimal, classical 2-opt, simulated annealing, and
+QAOA side by side for a small 5-point route, and writes
+`output/qaoa_demo_result.md` for your slides. On the runs we've done, QAOA
+matches the true optimum on this small instance — worth having in the
+pitch as "the same QUBO formulation ports directly to a second quantum
+computing paradigm with zero reformulation," which is a real, checkable
+technical point.
+
+**Said as plainly as everywhere else in this README:** this runs on a
+*classical simulation* of a quantum circuit, not real quantum hardware —
+simulating an n-qubit statevector costs `O(2^n)`, so this is only
+practical up to roughly 3-4 interior stops (9-16 qubits) before simulation
+itself becomes the bottleneck, independent of whether QAOA is "working."
+At the shallow circuit depths tractable here (p=1-2), QAOA is not claimed
+to beat simulated annealing in general — published results on generic
+QUBOs agree low-depth QAOA is a comparatively weak optimizer, and nothing
+here disputes that. It also isn't wired into the live app: a
+circuit-simulation-per-request model doesn't fit a stateless HTTP
+request/response cycle at any size worth showing a real user. Read
+`src/qaoa_solver.py`'s docstring for the full version of every caveat
+above, and `tests/test_qaoa_solver.py` for what's actually verified (valid
+results never beat the true brute-force optimum; on tiny 1-2-interior-stop
+instances where brute force is trivial, QAOA reliably finds it).
+
+## A pitch deck, generated from the project's own real numbers
+
+`generate_pitch_deck.js` builds `output/pitch_deck.pptx` — a 12-slide,
+fully-designed deck (title, the problem, the 5-step pipeline, both quantum
+paradigms, both benchmark experiments with a real chart, multi-vehicle
+dispatch, a feature grid, the test/CI numbers, the patent angle, roadmap,
+and a closing slide) — directly from this project's own regenerated
+benchmark CSVs, not hand-typed numbers copy-pasted once and left to drift.
+Run it after `main.py` so the CSVs it reads are current:
+
+```
+python3 main.py
+npm install        # one-time — pulls in pptxgenjs, the only Node dependency here
+node generate_pitch_deck.js
+```
+
+That writes `output/pitch_deck.pptx`, ready to open in PowerPoint or
+Google Slides. Every number on the two benchmark slides — the Experiment 1
+chart and Experiment 2's `15/15` / `8/15` / `+31.9%` stat callouts — is
+read straight out of `output/experiment_1_unconstrained.csv` and
+`output/experiment_2_constrained.csv`, computed the same way
+`src/benchmark.py`'s own `summarize_and_save()` does, so the deck can
+never claim a number the benchmark script and test suite don't actually
+produce. Re-run both commands any time the benchmark, feature set, or test
+count changes, and the deck regenerates in sync rather than going stale.
+
 ## How to pitch this at your internal round / to SIH judges
 
 Lead with Experiment 2, not Experiment 1. The narrative: *"Off-the-shelf
@@ -719,9 +926,13 @@ positioned on that trajectory.
 
 ## Extending this before the real pitch
 
-- **More constraint types**: add vehicle-capacity limits, time windows, or
-  multiple vehicles by writing one more penalty-term function alongside
-  `add_precedence_penalty()` in `qubo_tsp.py` — same pattern, same BQM.
+- **More constraint types**: precedence ("visit X before Y"), multiple
+  vehicles, and real per-stop demand weights (capacity in actual load, not
+  just stop count) are all already live (see the interface-redesign list
+  above, `add_precedence_penalty()` / `build_open_path_bqm`'s `precedence`
+  param in `qubo_tsp.py`, and `demands`/`vehicle_capacity` in
+  `solve_multi_vehicle`) — true numeric time windows are the natural next
+  penalty-term function to add alongside them, same pattern, same BQM.
 - **Using real map data**: `src/city_graph.py` has `build_live_osm_graph()`
   using `osmnx` to pull an actual OpenStreetMap road network for any place
   name — swap it in for `build_demo_graph()` once you've confirmed your
