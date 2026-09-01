@@ -353,12 +353,37 @@ const MAX_STOPS = {{ max_stops }};
 // see app.py and the README's production-path notes.
 const OSRM_BASE_URL = {{ osrm_base_url|tojson }};
 
-const satelliteLayer = L.tileLayer(
+// Satellite imagery alone is hard to read in a lot of Indian localities —
+// resolution varies a lot outside major metros, so bare imagery can look
+// blurry/pixelated with nothing to orient by. Esri's own "Boundaries and
+// Places" reference layer is a semi-transparent overlay of road lines,
+// place names, and labels designed specifically to sit on top of World
+// Imagery — stacking it on gives satellite view real labels/roads instead
+// of a soft, unlabeled photo. It's a LayerGroup so the basemap toggle
+// below can add/remove both tiles together as a single "satellite" layer.
+const satelliteImagery = L.tileLayer(
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  { attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community', maxZoom: 19 }
+  {
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+    maxZoom: 19, detectRetina: true,
+  }
 );
-const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
+const satelliteLabels = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 19, detectRetina: true }
+);
+const satelliteLayer = L.layerGroup([satelliteImagery, satelliteLabels]);
+
+// CARTO Voyager instead of plain OpenStreetMap "standard" tiles: same free,
+// no-API-key OSM road/place data underneath, but a noticeably crisper,
+// more polished cartographic style (clearer road hierarchy, better label
+// placement, more legible at a glance) — plus retina (@2x) tiles for sharp
+// rendering on high-DPI phone/laptop screens, which plain OSM tiles don't
+// offer. This is a pure visual upgrade; no routing/search code depends on
+// which basemap is showing.
+const streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  subdomains: 'abcd', maxZoom: 20, detectRetina: true,
 });
 
 const map = L.map('map', { layers: [satelliteLayer] }).setView(CENTERS[CITIES[0]], 13);

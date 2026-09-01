@@ -164,12 +164,26 @@ HTML_TEMPLATE = r"""<!doctype html>
 const CITY_DATA = __CITY_DATA_JSON__;
 const CITY_NAMES = Object.keys(CITY_DATA);
 
-const satelliteLayer = L.tileLayer(
+// Same basemap-quality upgrade as templates/click_router.html: satellite
+// imagery alone is often blurry/unlabeled outside major Indian metros, so
+// Esri's "Boundaries and Places" reference layer is stacked on top as a
+// labels/roads overlay; the street layer uses CARTO Voyager (crisper
+// cartographic style + retina tiles) instead of plain OSM "standard" tiles.
+const satelliteImagery = L.tileLayer(
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  { attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community', maxZoom: 19 }
+  {
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+    maxZoom: 19, detectRetina: true,
+  }
 );
-const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
+const satelliteLabels = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 19, detectRetina: true }
+);
+const satelliteLayer = L.layerGroup([satelliteImagery, satelliteLabels]);
+const streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  subdomains: 'abcd', maxZoom: 20, detectRetina: true,
 });
 
 const map = L.map('map', { layers: [satelliteLayer] }).setView([20.5, 78.9], 5);

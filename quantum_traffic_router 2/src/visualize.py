@@ -15,12 +15,21 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# Free, no-API-key satellite imagery (Esri World Imagery) and a plain street
-# basemap (OpenStreetMap) — both added as toggleable layers via
-# folium.LayerControl, so a judge can flip between "satellite" and "map"
-# view on the same page.
+# Free, no-API-key satellite imagery (Esri World Imagery) and a street
+# basemap — both added as toggleable layers via folium.LayerControl, so a
+# judge can flip between "satellite" and "map" view on the same page. The
+# street layer uses CARTO Voyager rather than folium's built-in plain
+# "OpenStreetMap" tiles — same free OSM road/place data underneath, but a
+# noticeably crisper, more polished cartographic style (see
+# templates/click_router.html and build_multi_city_map.py, which use the
+# exact same upgrade, for the full rationale).
 SATELLITE_TILES = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
 SATELLITE_ATTR = "Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+STREET_TILES = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+STREET_ATTR = (
+    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors '
+    '&copy; <a href="https://carto.com/attributions">CARTO</a>'
+)
 
 
 def render_route_map(Gc, waypoints: list[str], tour: list[int], out_path: str, title: str = "Route") -> None:
@@ -33,7 +42,10 @@ def render_route_map(Gc, waypoints: list[str], tour: list[int], out_path: str, t
 
     m = folium.Map(location=center, zoom_start=12, tiles=None)
     folium.TileLayer(tiles=SATELLITE_TILES, attr=SATELLITE_ATTR, name="Satellite", overlay=False).add_to(m)
-    folium.TileLayer(tiles="OpenStreetMap", name="Street map", overlay=False).add_to(m)
+    folium.TileLayer(
+        tiles=STREET_TILES, attr=STREET_ATTR, name="Street map", overlay=False,
+        subdomains="abcd", max_zoom=20, detect_retina=True,
+    ).add_to(m)
 
     # underlying road network, colored by how congested each edge currently is
     for u, v, data in Gc.edges(data=True):

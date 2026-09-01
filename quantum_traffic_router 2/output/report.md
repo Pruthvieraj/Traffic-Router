@@ -4,11 +4,11 @@
 
 | N waypoints | 2-opt (min) | QUBO+SA (min) | 2-opt time (ms) | QUBO+SA time (ms) |
 |---|---|---|---|---|
-| 6 | 186.7 | 186.7 | 0.04 | 361.82 |
-| 8 | 186.7 | 220.2 | 0.06 | 711.77 |
-| 10 | 260.6 | 301.7 | 0.08 | 1140.11 |
-| 12 | 412.3 | 561.7 | 0.19 | 1714.57 |
-| 14 | 538.0 | 725.8 | 0.26 | 2493.95 |
+| 6 | 186.7 | 186.7 | 0.06 | 403.73 |
+| 8 | 186.7 | 220.2 | 0.07 | 744.63 |
+| 10 | 260.6 | 301.7 | 0.08 | 1238.68 |
+| 12 | 412.3 | 561.7 | 0.15 | 1839.66 |
+| 14 | 538.0 | 725.8 | 0.29 | 2655.14 |
 
 **Honest finding:** on plain, unconstrained routing, classical nearest-neighbor+2-opt matches or beats the QUBO+simulated-annealing solver on both solution quality and speed. This matches well-established operations-research literature — 2-opt is a very strong heuristic for small-to-medium metric TSP, and a generic QUBO penalty formulation doesn't beat it here. We are not claiming otherwise; see Experiment 2 for where the QUBO framing earns its keep.
 

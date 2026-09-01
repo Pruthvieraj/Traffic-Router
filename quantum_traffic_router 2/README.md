@@ -63,8 +63,18 @@ Guwahati, and Coimbatore, covering North, South, East, West, Central, and
 Northeast India — each with its own curated road network, congestion
 pattern, and precomputed quantum-inspired / classical routes, all
 switchable from one dropdown with no reload. The basemap toggle switches
-between real satellite imagery (Esri World Imagery) and a plain
-OpenStreetMap street layer.
+between real satellite imagery and a street map, both upgraded for visual
+quality: satellite is Esri World Imagery with Esri's "Boundaries and
+Places" reference layer stacked on top (labels, roads, and place names
+overlaid on the photo — plain satellite imagery alone is often
+blurry/unlabeled outside major Indian metros, since real-world imagery
+resolution isn't uniform everywhere), and the street layer is CARTO
+Voyager rather than plain OpenStreetMap tiles — same free, no-API-key OSM
+data underneath, but a noticeably crisper cartographic style with clearer
+road hierarchy and label placement, plus retina (@2x) tiles for sharp
+rendering on high-DPI screens. Same upgrade applied identically in
+`templates/click_router.html` (the live app) and `src/visualize.py`'s
+`route_map.html`, so every map in the project looks consistent.
 
 Worth being precise about what this city list actually gates: it's the
 map-centering dropdown and this offline curated-landmark demo only. The
