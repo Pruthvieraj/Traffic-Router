@@ -17,7 +17,7 @@ each one actually wins.
 
 There are two ways to use this project — pick based on what you need:
 
-**A) Fixed-landmark demo (no server, just double-click a file)** — 17
+**A) Fixed-landmark demo (no server, just double-click a file)** — 18
 cities spanning every region of India, a dozen curated stops each,
 everything precomputed:
 ```bash
@@ -45,7 +45,7 @@ below) and finishes in under a minute. Outputs land in `output/`:
 
 | File | What it is |
 |---|---|
-| **`multi_city_map.html`** | **The flagship demo** — one page, a city dropdown covering 17 cities across India, a satellite/street basemap toggle, a classical-vs-quantum-inspired route toggle, and a "simulate disruption" button. Just double-click it. |
+| **`multi_city_map.html`** | **The flagship demo** — one page, a city dropdown covering 18 cities across India, a satellite/street basemap toggle, a classical-vs-quantum-inspired route toggle, and a "simulate disruption" button. Just double-click it. |
 | `route_map.html` | Interactive map of a 6-stop Bengaluru delivery route at evening rush hour |
 | `route_map_after_spike.html` | The same route re-optimized after a simulated accident/closure |
 | `comparison_chart.png` | Experiment 1 chart: classical vs quantum-inspired, plain routing |
@@ -55,12 +55,12 @@ below) and finishes in under a minute. Outputs land in `output/`:
 
 ### About `multi_city_map.html` — satellite maps and the multi-city toggle
 
-This is the page to actually show judges. It ships with 17 cities baked
+This is the page to actually show judges. It ships with 18 cities baked
 in, deliberately spread across the country rather than clustered around
 one region — Bengaluru, Mumbai, Pune, Gurgaon, Noida, Delhi, Chennai,
 Kolkata, Hyderabad, Ahmedabad, Jaipur, Lucknow, Chandigarh, Kochi, Bhopal,
-Guwahati, and Coimbatore, covering North, South, East, West, Central, and
-Northeast India — each with its own curated road network, congestion
+Guwahati, Coimbatore, and Nagpur, covering North, South, East, West,
+Central, and Northeast India — each with its own curated road network, congestion
 pattern, and precomputed quantum-inspired / classical routes, all
 switchable from one dropdown with no reload. The basemap toggle switches
 between real satellite imagery and a street map, both upgraded for visual
@@ -78,7 +78,7 @@ rendering on high-DPI screens. Same upgrade applied identically in
 
 Worth being precise about what this city list actually gates: it's the
 map-centering dropdown and this offline curated-landmark demo only. The
-live click-anywhere app (`app.py`, below) was never limited to these 17 —
+live click-anywhere app (`app.py`, below) was never limited to these 18 —
 real street routing (OSRM) and place search (Nominatim autocomplete) both
 work anywhere in India, or the world, the instant you click the map or
 type a search, regardless of which city is selected.
@@ -89,7 +89,7 @@ fully embedded in the file — that part works completely offline, on a
 laptop with wifi off, because this sandbox's own network is restricted
 enough that I had to build and test it that way. But the satellite/street
 *imagery* is fetched live from Esri/OpenStreetMap's tile servers — there's
-no practical way to bundle real satellite tiles for 17 cities at every
+no practical way to bundle real satellite tiles for 18 cities at every
 zoom level into one file. So: bring your own hotspot as a backup if venue
 wifi is a known problem, and if tiles fail to load, the road network,
 routes, markers, and stats panel all still render fine on a blank
@@ -248,9 +248,23 @@ same QUBO/classical solver used everywhere else in this project (see
 `/api/solve_fleet` endpoint so the single-vehicle contract above is
 completely unchanged).
 
-It now also supports a **real, enforced capacity constraint.** Selecting
-multi-vehicle mode reveals a "Max/vehicle" field — set it and no single
-vehicle will be handed more stops than that cap, full stop
+**The split is balanced by default, not just proximity-based.**
+Farthest-point clustering alone has no notion of fairness — it seeds
+clusters by distance and assigns every other stop to whichever seed is
+nearest, which in practice can hand one vehicle a wildly disproportionate
+share purely because of how stops happen to be distributed in space (a
+real run: 16 stops across 2 vehicles came out 14-and-2). Every solve now
+rebalances the clusters afterward against a size target — by default a
+fair-share target of `ceil(stops / n_vehicles)` (the size an exactly even
+split would produce), so a default multi-vehicle solve is balanced with no
+extra input needed. `tests/test_clustering.py`'s
+`test_default_split_is_balanced_even_with_no_explicit_capacity` reproduces
+that exact 14-vs-2 distribution shape and confirms it now splits evenly.
+
+On top of that default balancing, it also supports a **real, enforced,
+stricter capacity constraint.** Selecting multi-vehicle mode reveals a
+"Max/vehicle" field — set it below the fair share and no single vehicle
+will be handed more stops than that cap, full stop
 (`_rebalance_for_capacity` in `src/clustering.py` greedily moves points
 off an overloaded cluster onto the nearest under-capacity one's medoid
 until every cluster satisfies the cap). If the requested vehicle count
@@ -316,10 +330,49 @@ judge's first ten seconds are visual before they're technical:
   support and only shows itself where the browser actually has it,
   degrading invisibly (typed search keeps working everywhere) rather than
   showing a button that doesn't work.
-- **Pan-India city coverage.** The city dropdown now spans 17 cities across
+- **Smarter search for real Indian addresses.** A specific housing society
+  or apartment building (e.g. "Sukhwani Gracia C") often exists in
+  OpenStreetMap under its base name but not with the exact wing/tower/phase
+  suffix you'd naturally type — a single rigid query used to just fail
+  silently on these. Search now retries with progressively broader
+  phrasings (dropping the country suffix, then stripping a trailing
+  wing/tower/phase/block-style token) before giving up, and softly biases
+  results toward whichever city is selected. When every variant still comes
+  back empty — which does happen; smaller/newer societies are genuinely not
+  in OpenStreetMap's free database yet — the search box says so plainly and
+  points at the one fallback that always works regardless of database
+  coverage: switch to satellite view and click the exact building. See
+  `tests/test_layout.py`'s two search-fallback tests for the exact scenario
+  this fixes and how it's verified (with the real network call mocked out,
+  so the test is deterministic).
+- **Pan-India city coverage.** The city dropdown now spans 18 cities across
   every region of India instead of a handful clustered around Delhi NCR
   and Bengaluru — see "About `multi_city_map.html`" above for the full
   list and what this dropdown does (and doesn't) gate.
+- **Fleet loads are now balanced by default.** A real live-demo bug: with
+  no capacity limit set, plain farthest-point clustering could hand one
+  vehicle a wildly disproportionate share of stops purely because of how
+  they happened to be distributed in space — one run split 16 stops
+  across 2 vehicles as 14-and-2. `solve_multi_vehicle` now always
+  rebalances against a fair-share target of `ceil(stops / n_vehicles)`
+  even when no explicit capacity is given, so a default multi-vehicle
+  solve is balanced with no extra input required — the "Max/vehicle"
+  field is now for a *stricter* cap than the fair share, not the only way
+  to get a sane split. See `tests/test_clustering.py`'s
+  `test_default_split_is_balanced_even_with_no_explicit_capacity`, which
+  reproduces the exact 14-vs-2 distribution shape and asserts the fixed
+  version splits it evenly.
+- **Redesigned info-icon tooltips.** The small "i" icons next to the
+  method/vehicle/capacity selectors used to rely on the browser's native
+  `title=` tooltip — slow to appear, plain default styling, and completely
+  unusable on touch devices (no hover state to trigger it). They're now a
+  single shared, custom-styled floating bubble, positioned per-icon and
+  kept fully on-screen regardless of window width, shown on hover *or*
+  click/tap (so it works on phones), and dismissed on an outside click.
+  See `tests/test_layout.py`'s two tooltip tests for the exact interaction
+  behavior locked in (including a real bug this caught during development:
+  a naive click-to-toggle implementation closed the tooltip instantly on
+  desktop, because a mouse click always fires a hover event first).
 - **Small credibility details:** an info icon next to the method selector
   explaining in plain language what "quantum-inspired" actually means
   (simulated annealing on a QUBO, on classical hardware — not real quantum
@@ -469,7 +522,7 @@ pip install pytest
 pytest tests/ -v
 ```
 
-**150 Python tests** (162 total including the layout suite below), covering
+**155 Python tests** (171 total including the layout suite below), covering
 the QUBO solver, the classical baselines, the clustering/scaling logic,
 the multi-vehicle dispatch demo (including the real per-vehicle capacity
 cap and its auto-raising of vehicle count), the congestion model
@@ -492,7 +545,7 @@ needs only Node.js 18+ (its built-in test runner, no npm install):
 node --test tests/frontend/*.test.js
 ```
 
-**And a 12-test real-browser layout suite** (`tests/test_layout.py`),
+**And a 16-test real-browser layout suite** (`tests/test_layout.py`),
 added after a real bug shipped through a fully green test suite and
 several rounds of manual screenshots: the topbar had a fixed height
 combined with `flex-wrap`, so on a narrower browser window its second row
@@ -508,15 +561,18 @@ confirmed these exact tests fail against it. It also locks in a few
 frontend *interaction* behaviors the earlier unit tests couldn't reach
 (multi-vehicle mode relabeling the first pin "Depot," the capacity input
 only appearing once fleet mode is selected, the incident-simulate button
-rendering once per stop, the city dropdown actually offering all 17
-pan-India cities, and the voice-search mic button rendering as a clean
-icon rather than inheriting a stray dropdown-chevron background from the
-topbar's generic button styling — a real bug this suite caught once
-during development, the same day it was added). Needs Playwright, which
-— like pytest — is intentionally not in `requirements.txt` (dev/CI-only,
-and the test file
-skips itself cleanly if it's missing rather than failing the rest of the
-suite):
+rendering once per stop, the city dropdown actually offering all 18
+pan-India cities, the voice-search mic button rendering as a clean icon
+rather than inheriting a stray dropdown-chevron background from the
+topbar's generic button styling, the search fallback finding a broader
+match for an address like "Sukhwani Gracia C" while still surfacing a
+clear message when nothing is found anywhere, and the redesigned info-icon
+tooltip showing/hiding correctly and staying fully on-screen at narrow
+widths — several of these are real bugs this suite caught once during
+development, not just properties it happened to already satisfy). Needs
+Playwright, which — like pytest — is intentionally not in
+`requirements.txt` (dev/CI-only, and the test file skips itself cleanly if
+it's missing rather than failing the rest of the suite):
 
 ```
 pip install playwright && playwright install --with-deps chromium

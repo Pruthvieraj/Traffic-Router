@@ -225,18 +225,26 @@ def solve_multi_vehicle(
 
     HOW STOPS ARE SPLIT: the same deterministic farthest-point clustering
     used for single-vehicle scaling (_cluster_indices), applied to the
-    non-depot stops with `n_vehicles` clusters — so each vehicle gets a
-    travel-time-coherent group of stops rather than an arbitrary split.
+    non-depot stops with `n_vehicles` clusters, so each vehicle starts from
+    a travel-time-coherent group of stops rather than an arbitrary split —
+    but that clustering alone has no notion of fairness (it seeds clusters
+    by farthest-point distance, then assigns every other stop to whichever
+    seed is nearest), which in practice can hand one vehicle a wildly
+    disproportionate share purely because of how stops happen to be spread
+    out geographically. So the result is ALWAYS rebalanced afterward
+    (`_rebalance_for_capacity`) against a size limit: by default (no
+    `max_stops_per_vehicle` given) that limit is a soft "fair share" target
+    of `ceil(len(stop_indices) / n_vehicles)` — the size an exactly even
+    split would produce — so a default multi-vehicle solve is balanced with
+    no cap number the user has to think to type in.
 
-    CAPACITY (optional, `max_stops_per_vehicle`): real VRPs have a per-
-    vehicle capacity limit — plain farthest-point clustering has no idea
-    such a limit exists and can hand one vehicle a much larger share than
-    another. When `max_stops_per_vehicle` is set, this function (a) raises
-    `n_vehicles` first if the fleet as requested couldn't possibly satisfy
-    the limit even with a perfectly even split, then (b) greedily repairs
-    any still-overloaded cluster (`_rebalance_for_capacity`) until every
-    vehicle is at or under the limit. This is a real, enforced constraint
-    — not a suggestion — verified by tests/test_clustering.py.
+    CAPACITY (optional, `max_stops_per_vehicle`): pass a stricter number
+    than the fair share to enforce a real, harder-than-default per-vehicle
+    limit. When set, this function (a) raises `n_vehicles` first if the
+    fleet as requested couldn't possibly satisfy that limit even with a
+    perfectly even split, then (b) rebalances against it exactly as above.
+    This is a real, enforced constraint — not a suggestion — verified by
+    tests/test_clustering.py.
 
     HONEST SCOPE OF THIS FIRST CUT (say this plainly to judges): even with
     a capacity limit, this is NOT a full capacitated VRP solver — there's
@@ -261,11 +269,26 @@ def solve_multi_vehicle(
     if max_stops_per_vehicle is not None and max_stops_per_vehicle > 0:
         min_vehicles_needed = -(-len(stop_indices) // max_stops_per_vehicle)  # ceil division
         n_vehicles = min(max(n_vehicles, min_vehicles_needed), len(stop_indices))
+        effective_cap = max_stops_per_vehicle
+    else:
+        # No explicit cap given: still balance the split by default.
+        # _cluster_indices alone has no notion of fairness — it seeds
+        # clusters by farthest-point distance and then assigns every other
+        # stop to whichever seed is nearest, which can (and in practice
+        # does) hand one vehicle a wildly disproportionate share purely
+        # because of how stops happen to be distributed in space, e.g. 14
+        # stops on one vehicle and 2 on another out of 16 total. Rebalancing
+        # to a soft target of ceil(stops / n_vehicles) — the size an exactly
+        # even split would produce — fixes that by default, with no cap
+        # number the user has to think to type in. The explicit
+        # `max_stops_per_vehicle` field remains for when someone wants a
+        # STRICTER cap than the fair share (which can still raise
+        # n_vehicles, above) — this default path never needs to, since a
+        # perfectly even split by definition already fits n_vehicles.
+        effective_cap = -(-len(stop_indices) // n_vehicles)  # ceil division
 
     clusters = _cluster_indices(W, stop_indices, n_vehicles)
-
-    if max_stops_per_vehicle is not None and max_stops_per_vehicle > 0:
-        clusters = _rebalance_for_capacity(W, clusters, max_stops_per_vehicle)
+    clusters = _rebalance_for_capacity(W, clusters, effective_cap)
 
     def _solve_small(w):
         if method == "classical":

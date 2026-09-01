@@ -1,11 +1,12 @@
 """
 city_graph.py
 =============
-Builds the road-network graph the router operates on, for 17 major Indian
+Builds the road-network graph the router operates on, for 18 major Indian
 cities spanning North (Delhi, Jaipur, Lucknow, Chandigarh), South (Chennai,
 Hyderabad, Bengaluru, Kochi, Coimbatore), East (Kolkata), West (Mumbai,
-Pune, Ahmedabad), Central (Bhopal), and Northeast (Guwahati) India, plus
-the NCR belt (Gurgaon, Noida). This list is only used to seed the city
+Pune, Ahmedabad), Central (Bhopal, Nagpur), and Northeast (Guwahati)
+India, plus the NCR belt (Gurgaon, Noida). This list is only used to seed
+the city
 dropdown's map-centering and the offline curated-landmark demo graph — the
 live "click anywhere" app (app.py) itself is not limited to these cities at
 all: real street routing (OSRM) and place search (Nominatim) both work
@@ -272,6 +273,20 @@ CITIES: dict[str, dict[str, tuple[float, float]]] = {
         "Ukkadam":        (10.9891, 76.9614),
         "Vadavalli":      (11.0244, 76.9052),
         "Ramanathapuram": (10.9930, 76.9779),
+    },
+    "Nagpur": {
+        "Sitabuldi":      (21.1461, 79.0849),
+        "Dharampeth":     (21.1372, 79.0654),
+        "Sadar":          (21.1614, 79.0742),
+        "Civil Lines":    (21.1550, 79.0810),
+        "Mahal":          (21.1530, 79.1040),
+        "Ramdaspeth":     (21.1370, 79.0770),
+        "Wardha Road":    (21.1080, 79.0480),
+        "Manish Nagar":   (21.1120, 79.0270),
+        "Hingna":         (21.0870, 78.9420),
+        "Kamptee":        (21.2320, 79.1960),
+        "Trimurti Nagar": (21.1660, 79.0430),
+        "Pratap Nagar":   (21.1780, 79.0500),
     },
 }
 

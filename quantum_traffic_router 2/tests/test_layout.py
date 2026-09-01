@@ -27,10 +27,12 @@ suite):
 """
 
 import contextlib
+import json
 import os
 import socket
 import subprocess
 import time
+import urllib.parse
 import urllib.request
 
 import pytest
@@ -265,3 +267,107 @@ def test_incident_button_renders_for_every_stop_marker_line(live_server, browser
     """)
     page.close()
     assert button_count == 2  # one stop-marker line per leg
+
+
+# ---------- search fallback for addresses not in OpenStreetMap's database ----------
+# (a real user report: small housing societies like "Sukhwani Gracia C" in
+# Pune are frequently unmapped at the specific wing/tower level, even when
+# the base society name IS in OpenStreetMap — see fetchSuggestions()'s
+# progressively-broader-query fallback in the template.)
+
+def test_search_falls_back_to_a_broader_query_and_finds_a_result(live_server, browser):
+    """Simulates exactly the reported real-world failure: the exact query
+    (with a trailing wing letter) returns nothing from the search service,
+    but the base building name without that suffix does exist — the
+    fallback should still surface it, rather than reporting no match."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+
+    def handle_route(route):
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(route.request.url).query).get("q", [""])[0]
+        if q == "Sukhwani Gracia, Pune, India":  # the stripped-suffix fallback variant
+            route.fulfill(json=[{
+                "display_name": "Sukhwani Gracia, Wakad, Pune, Maharashtra, India",
+                "lat": "18.5980", "lon": "73.7629",
+            }])
+        else:  # the exact query (still has "C") and every other variant: nothing found
+            route.fulfill(json=[])
+
+    page.route("**nominatim.openstreetmap.org/search**", handle_route)
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.select_option("#citySelect", "Pune")
+    page.fill("#searchInput", "Sukhwani Gracia C")
+    page.wait_for_function(
+        "document.getElementById('suggestions').style.display === 'block'", timeout=5000,
+    )
+    text = page.inner_text("#suggestions")
+    page.close()
+    assert "Sukhwani Gracia" in text
+
+
+def test_search_shows_a_helpful_hint_when_nothing_is_found_anywhere(live_server, browser):
+    """When even the broadest fallback query comes back empty (a place
+    genuinely not in OpenStreetMap's free database — common for newer
+    housing societies), the search box should say so and point at the
+    guaranteed fallback (click the spot on the map) rather than just going
+    quiet, which looks like the search is broken rather than the data
+    being incomplete."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.route("**nominatim.openstreetmap.org/search**", lambda route: route.fulfill(json=[]))
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.fill("#searchInput", "Totally Nonexistent Society Zzzqx")
+    page.wait_for_function(
+        "document.getElementById('suggestions').style.display === 'block'", timeout=5000,
+    )
+    text = page.inner_text("#suggestions").lower()
+    page.close()
+    assert "click" in text and ("map" in text or "satellite" in text)
+
+
+# ---------- custom info-icon tooltip (replaces native title=) ----------
+
+def test_info_icon_tooltip_shows_its_text_on_click_and_hides_on_outside_click(live_server, browser):
+    """Regression check for the tooltip redesign: clicking an info icon
+    should show the shared #iconTooltip bubble with that icon's original
+    title text (moved to data-tip so the native browser tooltip doesn't
+    also fire), and clicking elsewhere should hide it again."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    icon = page.locator(".info-icon").first
+    assert icon.get_attribute("title") is None  # native tooltip attribute removed
+    expected = icon.get_attribute("data-tip")
+    assert expected and len(expected) > 10
+
+    icon.click()
+    page.wait_for_function(
+        "document.getElementById('iconTooltip').classList.contains('visible')", timeout=3000,
+    )
+    shown_text = page.inner_text("#iconTooltip")
+    assert shown_text == expected
+
+    page.mouse.click(700, 700)  # click somewhere unrelated on the map
+    page.wait_for_function(
+        "!document.getElementById('iconTooltip').classList.contains('visible')", timeout=3000,
+    )
+    page.close()
+
+
+def test_info_icon_tooltip_stays_within_the_viewport(live_server, browser):
+    """The vehicle-select info icon sits near the middle of a busy topbar —
+    the tooltip bubble must never be positioned so it clips off the left
+    or right edge of the window, regardless of window width."""
+    page = browser.new_page(viewport={"width": 375, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.locator(".info-icon").first.click()
+    page.wait_for_function(
+        "document.getElementById('iconTooltip').classList.contains('visible')", timeout=3000,
+    )
+    box = page.evaluate("""
+        () => {
+            const r = document.getElementById('iconTooltip').getBoundingClientRect();
+            return {left: r.left, right: r.right};
+        }
+    """)
+    page.close()
+    assert box["left"] >= 0
+    assert box["right"] <= 375

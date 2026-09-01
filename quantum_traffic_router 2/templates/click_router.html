@@ -89,7 +89,30 @@
     color: #b9c6d6; font-size: 11px; font-style: normal; display: inline-flex; align-items: center;
     justify-content: center; cursor: help; flex-shrink: 0; user-select: none;
   }
-  .info-icon:hover { background: var(--accent-1); color: white; }
+  .info-icon:hover, .info-icon:focus, .info-icon.tip-open {
+    background: var(--accent-1); color: white; outline: none;
+  }
+
+  /* Custom info-icon tooltip — replaces the native title= tooltip, which
+     is slow to appear, plain browser-default styling, truncates on some
+     platforms, and doesn't work at all on touch devices. This is one
+     shared floating bubble, positioned per-icon in JS, shown on
+     hover/focus (desktop) or tap (touch), always kept fully on-screen. */
+  #iconTooltip {
+    position: fixed; z-index: 3000; max-width: 270px; padding: 10px 13px;
+    background: #10162a; color: #e9edf5; font-size: 12px; font-weight: 400;
+    line-height: 1.55; border-radius: 10px; text-align: left;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.09);
+    pointer-events: none; opacity: 0; visibility: hidden;
+    transform: translateY(4px); transition: opacity 0.14s ease, transform 0.14s ease;
+  }
+  #iconTooltip.visible { opacity: 1; visibility: visible; transform: translateY(0); }
+  #iconTooltip::after {
+    content: ''; position: absolute; top: -5px; left: var(--arrow-left, 20px);
+    width: 9px; height: 9px; background: #10162a; transform: rotate(45deg);
+    box-shadow: -1px -1px 0 rgba(255, 255, 255, 0.09);
+  }
+  #iconTooltip.above::after { top: auto; bottom: -5px; transform: rotate(225deg); }
 
   #searchWrap { position: relative; }
   #searchWrap input {
@@ -130,6 +153,10 @@
   }
   #suggestions .suggestion:last-child { border-bottom: none; }
   #suggestions .suggestion:hover { background: #f4f2ff; }
+  #suggestions .suggestion-empty {
+    padding: 11px 13px; font-size: 12px; line-height: 1.55; color: var(--ink-soft);
+    font-style: italic; cursor: default;
+  }
 
   #topbar button { color: white; font-weight: 600; }
   #topbar button:disabled { opacity: 0.35; cursor: not-allowed; }
@@ -301,11 +328,11 @@
       <option value="2">2 vehicles</option>
       <option value="3">3 vehicles</option>
     </select>
-    <i class="info-icon" title="Multi-vehicle mode: your first point becomes a shared depot, and the remaining stops are split across N vehicles, each solved as its own exact round-trip. A first step toward real fleet dispatch (VRP) — not a full capacitated VRP solver.">i</i>
+    <i class="info-icon" title="Multi-vehicle mode: your first point becomes a shared depot, and the remaining stops are split across N vehicles, each solved as its own exact round-trip. Stops are grouped by travel-time proximity, then automatically rebalanced to a fair share (about total-stops / N each) so one vehicle doesn't end up with far more than another. A first step toward real fleet dispatch (VRP) — not a full capacitated VRP solver.">i</i>
   </div>
   <div class="method-wrap" id="capacityWrap" style="display:none;">
     <input id="capacityInput" type="number" min="1" max="20" placeholder="Max/vehicle">
-    <i class="info-icon" title="Optional real capacity limit: no single vehicle will be given more than this many stops. If the vehicle count above can't satisfy it, it's automatically raised until it can — this is an enforced constraint, not a suggestion.">i</i>
+    <i class="info-icon" title="Optional STRICTER cap: by default, vehicles are already auto-balanced to a fair share of the stops. Set this only if you need a harder limit than that fair share — no vehicle will then be given more than this many stops, and if the vehicle count above can't satisfy it, it's automatically raised until it can. This is an enforced constraint, not a suggestion.">i</i>
   </div>
   <select id="hourSelect" title="Simulated time of day (affects estimated traffic)">
     <option value="now">Now</option>
@@ -527,24 +554,80 @@ document.addEventListener('click', (e) => {
   }
 });
 
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Real Indian addresses often name a specific wing/tower/phase/block
+// ("Sukhwani Gracia C", "Kumar Paradise Wing B", "Phase 2") that
+// OpenStreetMap's free database frequently doesn't have tagged at that
+// precision — the base society/building name is often mapped, but the
+// specific sub-unit isn't. A single rigid query silently fails on exactly
+// these real, common addresses. This strips a trailing short
+// wing/tower/phase/block-style token so a broader retry has a real chance.
+function _stripTrailingSubUnit(query) {
+  return query.replace(/\s*[-,]?\s*(phase|wing|block|tower|building|society|apt|apartment)?\s*[a-z0-9]{1,3}$/i, '').trim();
+}
+
+async function _nominatimSearch(fullQuery, viewbox) {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=6&addressdetails=1`
+    + `&viewbox=${viewbox}&bounded=0&q=${encodeURIComponent(fullQuery)}`;
+  const resp = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+  if (!resp.ok) return [];
+  return resp.json();
+}
+
 async function fetchSuggestions(query) {
   const city = document.getElementById('citySelect').value;
-  const fullQuery = `${query}, ${city}, India`;
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(fullQuery)}`;
-  try {
-    const resp = await fetch(url, { headers: { 'Accept-Language': 'en' } });
-    if (!resp.ok) return;
-    const results = await resp.json();
-    lastSuggestions = results;
-    if (!results.length) { suggestionsEl.style.display = 'none'; return; }
-    suggestionsEl.innerHTML = results.map((r, i) =>
-      `<div class="suggestion" data-i="${i}">${r.display_name}</div>`
-    ).join('');
-    suggestionsEl.style.display = 'block';
-  } catch (err) {
-    // Autocomplete failing silently is fine — the user can still press
-    // Enter/click Solve normally, or just try again.
+  const center = CENTERS[city]; // [lat, lon]
+  // Soft-bias results toward the selected city (bounded=0 means this only
+  // nudges ranking, it never excludes a real match that's genuinely
+  // elsewhere) — roughly a 130km-wide box around the city center.
+  const d = 0.6;
+  const viewbox = `${center[1] - d},${center[0] + d},${center[1] + d},${center[0] - d}`;
+
+  const stripped = _stripTrailingSubUnit(query);
+  // Try progressively broader/simpler phrasings of the same query until one
+  // returns something, instead of giving up after a single exact match
+  // fails. Most societies/buildings genuinely ARE in OpenStreetMap under
+  // just their base name, even when a specific wing/tower/phase isn't.
+  const variants = [
+    `${query}, ${city}, India`,
+    `${query}, ${city}`,
+    ...(stripped && stripped.toLowerCase() !== query.toLowerCase() ? [`${stripped}, ${city}, India`] : []),
+    query,
+  ];
+
+  for (const fullQuery of variants) {
+    try {
+      const results = await _nominatimSearch(fullQuery, viewbox);
+      if (results.length) {
+        lastSuggestions = results;
+        suggestionsEl.innerHTML = results.map((r, i) =>
+          `<div class="suggestion" data-i="${i}">${escapeHtml(r.display_name)}</div>`
+        ).join('');
+        suggestionsEl.style.display = 'block';
+        return;
+      }
+    } catch (err) {
+      // this variant's request failed outright (network hiccup) — move on
+      // to the next, broader variant rather than giving up immediately.
+    }
   }
+
+  // Every variant came back empty. This is almost always a real gap in
+  // OpenStreetMap's free data — common for newer or smaller housing
+  // societies that were never mapped — not a bug in the search itself.
+  // The guaranteed fallback still works: literally any real place, mapped
+  // or not, can be pinned by clicking its exact spot on the satellite view.
+  lastSuggestions = [];
+  suggestionsEl.innerHTML = `<div class="suggestion-empty">No match in the map database for `
+    + `"${escapeHtml(query)}." This usually means it's a smaller building or `
+    + `society that isn't in OpenStreetMap yet — switch to satellite view and `
+    + `click its exact spot on the map instead; that always works.</div>`;
+  suggestionsEl.style.display = 'block';
 }
 
 suggestionsEl.addEventListener('click', (e) => {
@@ -563,6 +646,75 @@ function selectSuggestion(i) {
   suggestionsEl.style.display = 'none';
   lastSuggestions = [];
 }
+
+// ---------- Custom info-icon tooltips ----------
+// Replaces the native title= tooltip (slow to appear, plain browser
+// styling, doesn't work on touch at all) with one shared, styled bubble
+// positioned per-icon and kept fully on-screen. Reuses each icon's
+// existing title="..." text as the tooltip content — no HTML changes
+// needed per icon, just this wiring.
+const tooltipEl = document.createElement('div');
+tooltipEl.id = 'iconTooltip';
+document.body.appendChild(tooltipEl);
+let tooltipOwner = null;
+
+function _positionTooltip(icon) {
+  const r = icon.getBoundingClientRect();
+  tooltipEl.style.left = '0px'; tooltipEl.style.top = '0px'; // reset before measuring width
+  const tw = tooltipEl.offsetWidth;
+  let left = r.left + r.width / 2 - tw / 2;
+  left = Math.max(10, Math.min(left, window.innerWidth - tw - 10));
+  const spaceBelow = window.innerHeight - r.bottom;
+  const above = spaceBelow < 90 && r.top > 90;
+  const top = above ? r.top - tooltipEl.offsetHeight - 10 : r.bottom + 10;
+  tooltipEl.classList.toggle('above', above);
+  tooltipEl.style.left = `${left}px`;
+  tooltipEl.style.top = `${Math.max(6, top)}px`;
+  const arrowLeft = Math.max(10, Math.min(r.left + r.width / 2 - left - 4.5, tw - 18));
+  tooltipEl.style.setProperty('--arrow-left', `${arrowLeft}px`);
+}
+
+function showTooltip(icon) {
+  const text = icon.dataset.tip;
+  if (!text) return;
+  tooltipOwner = icon;
+  tooltipEl.textContent = text;
+  tooltipEl.classList.add('visible');
+  _positionTooltip(icon);
+}
+
+function hideTooltip() {
+  tooltipOwner = null;
+  tooltipEl.classList.remove('visible');
+  document.querySelectorAll('.info-icon.tip-open').forEach(el => el.classList.remove('tip-open'));
+}
+
+// "tip-open" marks a tooltip that was explicitly opened by click/tap and
+// should stay open until an outside click — distinct from the transient
+// hover/focus state, so that clicking an icon you're already hovering
+// (the normal desktop mouse sequence: hover shows it, then a click
+// lands) doesn't immediately toggle it back closed again.
+document.querySelectorAll('.info-icon').forEach((icon) => {
+  if (icon.title) { icon.dataset.tip = icon.title; icon.removeAttribute('title'); }
+  icon.setAttribute('tabindex', '0');
+  icon.setAttribute('role', 'button');
+  icon.setAttribute('aria-label', 'More information');
+  icon.addEventListener('mouseenter', () => showTooltip(icon));
+  icon.addEventListener('mouseleave', () => { if (!icon.classList.contains('tip-open')) hideTooltip(); });
+  icon.addEventListener('focus', () => showTooltip(icon));
+  icon.addEventListener('blur', () => { if (!icon.classList.contains('tip-open')) hideTooltip(); });
+  icon.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const wasLocked = icon.classList.contains('tip-open');
+    document.querySelectorAll('.info-icon.tip-open').forEach(el => el.classList.remove('tip-open'));
+    if (wasLocked) { hideTooltip(); return; }
+    icon.classList.add('tip-open');
+    showTooltip(icon);
+  });
+});
+document.addEventListener('click', hideTooltip);
+window.addEventListener('scroll', () => { if (tooltipOwner) _positionTooltip(tooltipOwner); }, true);
+window.addEventListener('resize', () => { if (tooltipOwner) _positionTooltip(tooltipOwner); });
 
 // ---------- Voice search ----------
 // Uses the browser's built-in Web Speech API (no server/API key needed) to

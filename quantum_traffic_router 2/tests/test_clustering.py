@@ -179,10 +179,11 @@ def test_capacity_auto_raises_vehicle_count_when_requested_fleet_is_too_small():
         assert v["stops"] <= 3
 
 
-def test_capacity_none_preserves_old_unconstrained_behavior():
-    """max_stops_per_vehicle=None (the default) must behave byte-for-byte
-    like before this feature existed — no regression for callers that
-    don't ask for a capacity limit."""
+def test_capacity_none_matches_omitting_the_argument_entirely():
+    """max_stops_per_vehicle=None and simply not passing the argument at
+    all must be exactly equivalent — both take the "no explicit cap" path
+    (which, since the imbalance-fix below, means the default fair-share
+    balancing, not zero balancing)."""
     n = 7
     W = _random_matrix(n, seed=3)
     stop_indices = list(range(1, n))
@@ -190,6 +191,37 @@ def test_capacity_none_preserves_old_unconstrained_behavior():
     without_arg = solve_multi_vehicle(W, 0, stop_indices, n_vehicles=2, method="classical")
     assert with_none["n_vehicles"] == without_arg["n_vehicles"]
     assert [v["path"] for v in with_none["vehicles"]] == [v["path"] for v in without_arg["vehicles"]]
+
+
+def test_default_split_is_balanced_even_with_no_explicit_capacity():
+    """Regression test for a real reported bug: with no capacity limit
+    set, plain farthest-point clustering could hand one vehicle a wildly
+    disproportionate share of stops purely because of how they happened to
+    be distributed in space — a live demo run produced a 14-stops-vs-2-stops
+    split across 2 vehicles for 16 total stops. solve_multi_vehicle now
+    always rebalances against a default fair-share target of
+    ceil(stops / n_vehicles) even when the caller never mentions capacity
+    at all, so no vehicle should end up more than roughly double the size
+    of the smallest one, let alone 7x."""
+    n = 17  # depot (0) + 16 stops, deliberately clustered unevenly in space
+    rng = np.random.default_rng(99)
+    # 14 points bunched tightly together, 2 points far away — the exact
+    # shape of distribution that produced the reported 14-vs-2 split.
+    pts = np.vstack([
+        rng.uniform(0, 5, size=(14, 2)),
+        rng.uniform(80, 100, size=(2, 2)),
+        rng.uniform(40, 45, size=(1, 2)),  # depot, roughly in between
+    ])
+    W = np.linalg.norm(pts[:, None, :] - pts[None, :, :], axis=-1)
+    depot = 16
+    stop_indices = list(range(16))
+
+    result = solve_multi_vehicle(W, depot, stop_indices, n_vehicles=2, method="classical")
+    sizes = sorted(v["stops"] for v in result["vehicles"])
+    assert len(result["vehicles"]) == 2
+    assert sizes == [8, 8]  # ceil(16/2) = 8 each — an exactly even split here
+    all_assigned = sorted(s for v in result["vehicles"] for s in v["path"][1:-1])
+    assert all_assigned == stop_indices
 
 
 def test_capacity_exactly_evenly_divisible_needs_no_extra_vehicles():

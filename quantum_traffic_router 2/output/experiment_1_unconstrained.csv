@@ -1,6 +1,6 @@
 2opt_cost_min,2opt_ms,2opt_pct_above_optimal,experiment,n_waypoints,qubo_sa_cost_min,qubo_sa_ms,qubo_sa_pct_above_optimal,true_optimal_min
-186.7,0.06,0.0,unconstrained,6,186.7,403.73,0.0,186.7
-186.7,0.07,0.0,unconstrained,8,220.2,744.63,18.0,186.7
-260.6,0.08,0.0,unconstrained,10,301.7,1238.68,15.8,260.6
-412.3,0.15,,unconstrained,12,561.7,1839.66,,
-538.0,0.29,,unconstrained,14,725.8,2655.14,,
+186.7,0.05,0.0,unconstrained,6,186.7,384.24,0.0,186.7
+186.7,0.06,0.0,unconstrained,8,220.2,733.94,18.0,186.7
+260.6,0.08,0.0,unconstrained,10,301.7,1189.44,15.8,260.6
+412.3,0.18,,unconstrained,12,561.7,1888.31,,
+538.0,0.28,,unconstrained,14,725.8,2780.77,,

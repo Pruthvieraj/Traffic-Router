@@ -1,5 +1,5 @@
 """Tests for src/city_graph.py — specifically the pan-India city coverage
-(17 curated cities spanning North/South/East/West/Central/Northeast India)
+(18 curated cities spanning North/South/East/West/Central/Northeast India)
 added so the city dropdown isn't limited to a handful of NCR-adjacent
 cities. The live click-anywhere app itself was never limited to these
 cities (OSRM + Nominatim work anywhere), but the dropdown's map-centering
@@ -11,11 +11,11 @@ import pytest
 
 from city_graph import CITIES, _city_center, build_city_graph, list_cities
 
-EXPECTED_MIN_CITIES = 17
+EXPECTED_MIN_CITIES = 18
 
 
 def test_at_least_seventeen_cities_are_available():
-    """The pan-India expansion added 12 cities on top of the original 5
+    """The pan-India expansion added 13 cities on top of the original 5
     (Bengaluru, Mumbai, Pune, Gurgaon, Noida) — this is a floor, not an
     exact count, so future additions don't need to touch this test."""
     assert len(list_cities()) >= EXPECTED_MIN_CITIES
@@ -24,7 +24,7 @@ def test_at_least_seventeen_cities_are_available():
 @pytest.mark.parametrize("city", [
     "Bengaluru", "Mumbai", "Pune", "Gurgaon", "Noida", "Delhi", "Chennai",
     "Kolkata", "Hyderabad", "Ahmedabad", "Jaipur", "Lucknow", "Chandigarh",
-    "Kochi", "Bhopal", "Guwahati", "Coimbatore",
+    "Kochi", "Bhopal", "Guwahati", "Coimbatore", "Nagpur",
 ])
 def test_every_expected_city_is_registered(city):
     assert city in CITIES
