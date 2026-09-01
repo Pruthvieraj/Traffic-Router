@@ -33,11 +33,21 @@
     font-family: 'Inter', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
     color: var(--ink);
   }
-  #map { position: absolute; top: 68px; bottom: 0; left: 0; right: 0; cursor: crosshair; }
+  /* The page is a flex COLUMN: topbar first (auto height — it grows to
+     however many rows it needs when controls wrap on a narrower window),
+     then #content takes all remaining space. This is what makes the
+     layout robust: #map and the floating panels are never positioned with
+     a hardcoded pixel offset guessing the topbar's height, so nothing
+     spills outside the topbar or gets covered by the map when it wraps to
+     two or three rows on a narrower screen. */
+  body { display: flex; flex-direction: column; overflow: hidden; }
+  #content { position: relative; flex: 1 1 auto; min-height: 0; }
+  #map { position: absolute; inset: 0; cursor: crosshair; }
 
   /* ---------- Topbar ---------- */
   #topbar {
-    height: 68px; display: flex; align-items: center; gap: 8px; padding: 0 18px;
+    flex: 0 0 auto; min-height: 68px; display: flex; align-items: center; gap: 8px 10px;
+    padding: 10px 18px;
     background: linear-gradient(120deg, #0b1220 0%, #161233 55%, #1b1442 100%);
     color: white; box-sizing: border-box; flex-wrap: wrap;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
@@ -121,7 +131,7 @@
     border: 1px solid var(--panel-border); box-shadow: var(--shadow); border-radius: var(--radius);
   }
   #hint {
-    position: absolute; top: 84px; left: 50%; transform: translateX(-50%); padding: 10px 18px;
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%); padding: 10px 18px;
     font-size: 13px; z-index: 600; text-align: center; max-width: 620px; color: var(--ink-soft);
   }
   #hint b { color: var(--ink); }
@@ -157,11 +167,11 @@
   #stats .footnote { margin-top: 8px; padding-top: 8px; border-top: 1px solid #eef0f3; font-size: 10.5px; color: var(--muted); line-height: 1.5; }
 
   #directions {
-    position: absolute; top: 84px; right: 18px; width: 300px; max-height: calc(100vh - 170px);
+    position: absolute; top: 16px; right: 18px; bottom: 18px; width: 300px; max-height: calc(100% - 34px);
     z-index: 500; display: none; overflow: hidden; flex-direction: column;
   }
   #directions-header {
-    padding: 12px 16px; font-size: 13px; font-weight: 700; color: var(--ink);
+    flex: 0 0 auto; padding: 12px 16px; font-size: 13px; font-weight: 700; color: var(--ink);
     border-bottom: 1px solid rgba(15, 23, 42, 0.08);
     display: flex; justify-content: space-between; align-items: center;
   }
@@ -170,7 +180,7 @@
     padding: 0 4px; line-height: 1; border-radius: 6px;
   }
   #directions-header button:hover { color: var(--danger); }
-  #directions-list { list-style: none; margin: 0; padding: 6px 0; overflow-y: auto; max-height: calc(100vh - 230px); }
+  #directions-list { list-style: none; margin: 0; padding: 6px 0; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
   #directions-list li {
     padding: 9px 16px; font-size: 12.5px; color: #2c3e50; line-height: 1.5;
     border-bottom: 1px solid #f2f2f2; position: relative;
@@ -190,7 +200,7 @@
   .incident-btn:disabled { opacity: 0.5; cursor: progress; }
 
   #error, #notice {
-    position: absolute; top: 84px; left: 50%; transform: translateX(-50%); padding: 9px 18px;
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%); padding: 9px 18px;
     font-size: 13px; z-index: 700; display: none; max-width: 620px; text-align: center; font-weight: 600;
   }
   #error { color: white; background: linear-gradient(120deg, #ef4444, #dc2626); border: none; }
@@ -219,10 +229,18 @@
   /* ---------- Responsive ---------- */
   @media (max-width: 860px) {
     #brand h1 { display: none; }
-    #hint { max-width: 88vw; font-size: 12px; padding: 8px 14px; top: 76px; }
+    #hint { max-width: 88vw; font-size: 12px; padding: 8px 14px; top: 12px; }
     #stats { left: 12px; right: 12px; bottom: 12px; max-width: none; }
     #directions { left: 12px; right: 12px; width: auto; top: auto; bottom: 12px; max-height: 38vh; }
-    #directions-list { max-height: calc(38vh - 46px); }
+  }
+  @media (max-width: 1180px) {
+    /* Give the controls more room to breathe before they wrap — shrinking
+       the search box and gaps first buys real estate so wrapping (when it
+       does happen) is the exception, not the norm, on a typical laptop
+       browser window. */
+    #topbar { gap: 6px 8px; padding: 10px 12px; }
+    #searchWrap input { width: 160px; }
+    #searchWrap input:focus { width: 190px; }
   }
 </style>
 </head>
@@ -276,17 +294,19 @@
   <button id="solveBtn" class="primary" disabled>Solve route</button>
   <button id="clearBtn" class="danger">Clear points</button>
 </div>
-<div id="map"></div>
-<div id="hint">Click the map, or search a place above, to drop a <b>Start</b> point, then an <b>End</b> point, then any stops in between (up to {{ max_stops }} total). Drag a pin to move it, click a pin to remove it. Switch to multiple vehicles to turn the first point into a shared depot. Routes follow real streets, powered by OSRM.</div>
-<div id="error"></div>
-<div id="notice"></div>
-<div id="stats"></div>
-<div id="directions">
-  <div id="directions-header">
-    <span>Turn-by-turn directions</span>
-    <button id="directionsClose" title="Hide">&times;</button>
+<div id="content">
+  <div id="map"></div>
+  <div id="hint">Click the map, or search a place above, to drop a <b>Start</b> point, then an <b>End</b> point, then any stops in between (up to {{ max_stops }} total). Drag a pin to move it, click a pin to remove it. Switch to multiple vehicles to turn the first point into a shared depot. Routes follow real streets, powered by OSRM.</div>
+  <div id="error"></div>
+  <div id="notice"></div>
+  <div id="stats"></div>
+  <div id="directions">
+    <div id="directions-header">
+      <span>Turn-by-turn directions</span>
+      <button id="directionsClose" title="Hide">&times;</button>
+    </div>
+    <ol id="directions-list"></ol>
   </div>
-  <ol id="directions-list"></ol>
 </div>
 
 <script>
