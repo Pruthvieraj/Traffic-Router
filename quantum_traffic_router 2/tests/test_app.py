@@ -154,3 +154,23 @@ def test_solve_fleet_rejects_bad_depot_index(client):
     matrix = [[0, 1, 2], [1, 0, 3], [2, 3, 0]]
     resp = client.post("/api/solve_fleet", json={"matrix": matrix, "method": "classical", "depot_index": 9})
     assert resp.status_code == 400
+
+
+def test_solve_fleet_enforces_max_stops_per_vehicle(client):
+    n = 6  # depot + 5 stops
+    matrix = [[abs(i - j) * 100.0 for j in range(n)] for i in range(n)]
+    resp = client.post("/api/solve_fleet", json={
+        "matrix": matrix, "method": "classical", "n_vehicles": 2, "max_stops_per_vehicle": 2,
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["max_stops_per_vehicle"] == 2
+    assert data["n_vehicles_used"] >= 3  # ceil(5 / 2) = 3, so it must have been auto-raised from 2
+    for v in data["vehicles"]:
+        assert v["stops"] <= 2
+
+
+def test_solve_fleet_rejects_invalid_max_stops_per_vehicle(client):
+    matrix = [[0, 1, 2, 3], [1, 0, 4, 5], [2, 4, 0, 6], [3, 5, 6, 0]]
+    resp = client.post("/api/solve_fleet", json={"matrix": matrix, "method": "classical", "max_stops_per_vehicle": 0})
+    assert resp.status_code == 400

@@ -76,6 +76,14 @@
   #topbar select:focus { outline: none; border-color: var(--accent-cyan); }
 
   .method-wrap { display: flex; align-items: center; gap: 5px; }
+  #capacityInput {
+    font-family: inherit; font-size: 12.5px; padding: 8px 10px; width: 118px;
+    border-radius: 9px; border: 1px solid rgba(255, 255, 255, 0.14);
+    background-color: #1b2740; color: #e6ecf5;
+  }
+  #capacityInput:focus { outline: none; border-color: var(--accent-cyan); }
+  #capacityInput::placeholder { color: var(--muted); font-size: 11px; }
+  #capacityInput::-webkit-inner-spin-button, #capacityInput::-webkit-outer-spin-button { opacity: 0.6; }
   .info-icon {
     width: 17px; height: 17px; border-radius: 50%; background: rgba(255, 255, 255, 0.12);
     color: #b9c6d6; font-size: 11px; font-style: normal; display: inline-flex; align-items: center;
@@ -85,12 +93,28 @@
 
   #searchWrap { position: relative; }
   #searchWrap input {
-    font-family: inherit; cursor: text; width: 230px; font-size: 12.5px; padding: 8px 12px 8px 32px;
+    font-family: inherit; cursor: text; width: 230px; font-size: 12.5px; padding: 8px 30px 8px 32px;
     border-radius: 9px; border: 1px solid rgba(255, 255, 255, 0.14); background-color: #1b2740;
     color: #e6ecf5; transition: border-color 0.15s ease, width 0.15s ease;
   }
   #searchWrap input:focus { outline: none; border-color: var(--accent-cyan); width: 260px; }
   #searchWrap input::placeholder { color: var(--muted); }
+  /* Higher-specificity selector (#topbar button#micBtn) needed here to win
+     over the generic "#topbar select, #topbar button" chevron styling
+     below — otherwise every plain <button> in the topbar (this one
+     included) inherits that dropdown-arrow background image. */
+  #topbar button#micBtn {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    width: 21px; height: 21px; padding: 0; border: none; background: transparent none;
+    color: var(--muted); cursor: pointer; border-radius: 50%; align-items: center;
+    justify-content: center; transition: color 0.15s ease, background-color 0.15s ease;
+  }
+  #topbar button#micBtn:hover { color: var(--accent-cyan); background: rgba(34, 211, 238, 0.14); }
+  #micBtn.listening { color: #ef4444; animation: micPulse 1.1s ease-in-out infinite; }
+  @keyframes micPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
+    50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+  }
   #searchWrap::before {
     content: ''; position: absolute; left: 11px; top: 50%; width: 13px; height: 13px;
     transform: translateY(-50%); pointer-events: none; opacity: 0.55;
@@ -279,6 +303,10 @@
     </select>
     <i class="info-icon" title="Multi-vehicle mode: your first point becomes a shared depot, and the remaining stops are split across N vehicles, each solved as its own exact round-trip. A first step toward real fleet dispatch (VRP) — not a full capacitated VRP solver.">i</i>
   </div>
+  <div class="method-wrap" id="capacityWrap" style="display:none;">
+    <input id="capacityInput" type="number" min="1" max="20" placeholder="Max/vehicle">
+    <i class="info-icon" title="Optional real capacity limit: no single vehicle will be given more than this many stops. If the vehicle count above can't satisfy it, it's automatically raised until it can — this is an enforced constraint, not a suggestion.">i</i>
+  </div>
   <select id="hourSelect" title="Simulated time of day (affects estimated traffic)">
     <option value="now">Now</option>
     <option value="9">Morning peak (9 AM)</option>
@@ -289,6 +317,13 @@
   <div class="divider"></div>
   <div id="searchWrap">
     <input id="searchInput" type="text" placeholder="Search a place, address, or landmark..." autocomplete="off">
+    <button id="micBtn" type="button" title="Search by voice" aria-label="Search by voice" style="display:none;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+      </svg>
+    </button>
     <div id="suggestions"></div>
   </div>
   <button id="solveBtn" class="primary" disabled>Solve route</button>
@@ -419,6 +454,7 @@ document.getElementById('clearBtn').addEventListener('click', () => {
 });
 
 document.getElementById('vehicleSelect').addEventListener('change', () => {
+  document.getElementById('capacityWrap').style.display = isFleetMode() ? 'flex' : 'none';
   redrawPins(); // relabels the first pin as Depot ("D") vs Start ("S")
   invalidateRoute(null);
 });
@@ -501,6 +537,57 @@ function selectSuggestion(i) {
   searchInputEl.value = '';
   suggestionsEl.style.display = 'none';
   lastSuggestions = [];
+}
+
+// ---------- Voice search ----------
+// Uses the browser's built-in Web Speech API (no server/API key needed) to
+// let you speak a place name instead of typing it. Feature-detected: the
+// mic button only appears in browsers that actually support it (Chrome/Edge
+// today; Safari/Firefox support varies), so nothing breaks where it's
+// unavailable — typing still works everywhere regardless.
+const micBtn = document.getElementById('micBtn');
+const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (SpeechRecognitionCtor) {
+  micBtn.style.display = 'inline-flex';
+  const recognition = new SpeechRecognitionCtor();
+  recognition.lang = 'en-IN'; // biases recognition toward Indian place names/accents
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  let listening = false;
+
+  recognition.addEventListener('result', async (e) => {
+    const transcript = e.results[0][0].transcript;
+    searchInputEl.value = transcript;
+    await fetchSuggestions(transcript);
+    // Voice search is meant to feel instant — jump straight to the top
+    // match instead of making you click a suggestion, the way typed
+    // search does. If nothing came back, the text just sits in the box
+    // so you can see what was heard and try again or edit it.
+    if (lastSuggestions.length) selectSuggestion(0);
+  });
+
+  recognition.addEventListener('end', () => {
+    listening = false;
+    micBtn.classList.remove('listening');
+  });
+
+  recognition.addEventListener('error', () => {
+    listening = false;
+    micBtn.classList.remove('listening');
+  });
+
+  micBtn.addEventListener('click', () => {
+    if (listening) { recognition.stop(); return; }
+    listening = true;
+    micBtn.classList.add('listening');
+    try {
+      recognition.start();
+    } catch (err) {
+      listening = false;
+      micBtn.classList.remove('listening');
+    }
+  });
 }
 
 // ---------- Real road-network routing (OSRM), called from the browser ----------
@@ -799,6 +886,8 @@ async function solveFleet(nVehicles) {
     const method = document.getElementById('methodSelect').value;
     const hourRaw = document.getElementById('hourSelect').value;
     const hour = hourRaw === 'now' ? (new Date().getHours() + new Date().getMinutes() / 60) : parseFloat(hourRaw);
+    const capacityRaw = document.getElementById('capacityInput').value;
+    const maxStopsPerVehicle = capacityRaw ? parseInt(capacityRaw, 10) : null;
 
     const durations = await osrmTable(clickedPoints);
 
@@ -806,7 +895,10 @@ async function solveFleet(nVehicles) {
     const solveResp = await fetch('/api/solve_fleet', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ matrix: durations, method, hour, n_vehicles: nVehicles, depot_index: 0 }),
+      body: JSON.stringify({
+        matrix: durations, method, hour, n_vehicles: nVehicles, depot_index: 0,
+        max_stops_per_vehicle: maxStopsPerVehicle,
+      }),
     });
     const solveData = await solveResp.json();
     if (!solveResp.ok) { showError(solveData.error || 'Fleet solve failed.'); return; }
@@ -828,6 +920,9 @@ async function solveFleet(nVehicles) {
       `;
     }
 
+    const capacityNote = (maxStopsPerVehicle && solveData.n_vehicles_used > nVehicles)
+      ? `${nVehicles} vehicle${nVehicles === 1 ? '' : 's'} couldn't satisfy a ${maxStopsPerVehicle}-stop cap, so this was automatically raised to ${solveData.n_vehicles_used}. `
+      : '';
     const statsEl = document.getElementById('stats');
     statsEl.style.display = 'block';
     statsEl.innerHTML = `
@@ -835,7 +930,7 @@ async function solveFleet(nVehicles) {
       <div class="hero-label">Total fleet drive time &middot; ${formatHour(hour)} traffic</div>
       <div class="hero-time">${solveData.total_cost_minutes} min</div>
       ${vehicleRows}
-      <div class="footnote">Each vehicle starts and returns to the Depot pin (your first point). Free-flow (no-traffic) total would be ${solveData.total_free_flow_minutes} min. This is a first step toward real multi-vehicle dispatch, not a full capacitated VRP solver — see the README.</div>
+      <div class="footnote">${capacityNote}Each vehicle starts and returns to the Depot pin (your first point). Free-flow (no-traffic) total would be ${solveData.total_free_flow_minutes} min. This is a first step toward real multi-vehicle dispatch, not a full capacitated VRP solver — see the README.</div>
     `;
     animateIn(statsEl);
   } catch (err) {

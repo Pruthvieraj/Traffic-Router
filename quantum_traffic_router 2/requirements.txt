@@ -37,3 +37,11 @@ gunicorn>=21.2
 # The frontend helper tests (tests/frontend/) need only Node.js 18+ (for
 # its built-in test runner) — no npm install, no extra Python dependency:
 #     node --test tests/frontend/*.test.js
+#
+# tests/test_layout.py (real-browser layout/regression checks — see its
+# own docstring for why it exists) needs Playwright, which is NOT listed
+# above on purpose: it's a dev/CI-only tool, and the test file skips
+# itself cleanly if it's missing rather than failing the rest of the
+# suite. Install it separately to run those tests:
+#     pip install playwright && playwright install --with-deps chromium
+#     pytest tests/test_layout.py -v

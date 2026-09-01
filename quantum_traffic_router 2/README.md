@@ -17,8 +17,9 @@ each one actually wins.
 
 There are two ways to use this project — pick based on what you need:
 
-**A) Fixed-landmark demo (no server, just double-click a file)** — five
-cities, a dozen curated stops each, everything precomputed:
+**A) Fixed-landmark demo (no server, just double-click a file)** — 17
+cities spanning every region of India, a dozen curated stops each,
+everything precomputed:
 ```bash
 pip install -r requirements.txt
 python3 main.py
@@ -44,7 +45,7 @@ below) and finishes in under a minute. Outputs land in `output/`:
 
 | File | What it is |
 |---|---|
-| **`multi_city_map.html`** | **The flagship demo** — one page, a city dropdown (Bengaluru / Mumbai / Pune / Gurgaon / Noida), a satellite/street basemap toggle, a classical-vs-quantum-inspired route toggle, and a "simulate disruption" button. Just double-click it. |
+| **`multi_city_map.html`** | **The flagship demo** — one page, a city dropdown covering 17 cities across India, a satellite/street basemap toggle, a classical-vs-quantum-inspired route toggle, and a "simulate disruption" button. Just double-click it. |
 | `route_map.html` | Interactive map of a 6-stop Bengaluru delivery route at evening rush hour |
 | `route_map_after_spike.html` | The same route re-optimized after a simulated accident/closure |
 | `comparison_chart.png` | Experiment 1 chart: classical vs quantum-inspired, plain routing |
@@ -54,12 +55,23 @@ below) and finishes in under a minute. Outputs land in `output/`:
 
 ### About `multi_city_map.html` — satellite maps and the multi-city toggle
 
-This is the page to actually show judges. It ships with five cities baked
-in — Bengaluru, Mumbai, Pune, Gurgaon, Noida — each with its own curated
-road network, congestion pattern, and precomputed quantum-inspired /
-classical routes, all switchable from one dropdown with no reload. The
-basemap toggle switches between real satellite imagery (Esri World
-Imagery) and a plain OpenStreetMap street layer.
+This is the page to actually show judges. It ships with 17 cities baked
+in, deliberately spread across the country rather than clustered around
+one region — Bengaluru, Mumbai, Pune, Gurgaon, Noida, Delhi, Chennai,
+Kolkata, Hyderabad, Ahmedabad, Jaipur, Lucknow, Chandigarh, Kochi, Bhopal,
+Guwahati, and Coimbatore, covering North, South, East, West, Central, and
+Northeast India — each with its own curated road network, congestion
+pattern, and precomputed quantum-inspired / classical routes, all
+switchable from one dropdown with no reload. The basemap toggle switches
+between real satellite imagery (Esri World Imagery) and a plain
+OpenStreetMap street layer.
+
+Worth being precise about what this city list actually gates: it's the
+map-centering dropdown and this offline curated-landmark demo only. The
+live click-anywhere app (`app.py`, below) was never limited to these 17 —
+real street routing (OSRM) and place search (Nominatim autocomplete) both
+work anywhere in India, or the world, the instant you click the map or
+type a search, regardless of which city is selected.
 
 **One thing to know before you demo it: it needs live internet for the map
 tiles.** The map library itself (Leaflet) and all the routing data are
@@ -67,13 +79,13 @@ fully embedded in the file — that part works completely offline, on a
 laptop with wifi off, because this sandbox's own network is restricted
 enough that I had to build and test it that way. But the satellite/street
 *imagery* is fetched live from Esri/OpenStreetMap's tile servers — there's
-no practical way to bundle real satellite tiles for five cities at every
+no practical way to bundle real satellite tiles for 17 cities at every
 zoom level into one file. So: bring your own hotspot as a backup if venue
 wifi is a known problem, and if tiles fail to load, the road network,
 routes, markers, and stats panel all still render fine on a blank
 background — the demo doesn't break, it just loses the pretty backdrop.
 
-**Adding a 6th city** is one dictionary entry: open `src/city_graph.py`,
+**Adding another city** is one dictionary entry: open `src/city_graph.py`,
 add `"Your City": {"Landmark A": (lat, lon), "Landmark B": (lat, lon), ...}`
 to the `CITIES` dict (8+ landmarks recommended), then re-run
 `python3 main.py` — the k-nearest-neighbor road-graph builder, the QUBO
@@ -83,11 +95,16 @@ The same new city entry also works for `app.py` below, since it reuses
 
 ## `app.py` — click anywhere in the city (real streets, real solve, live)
 
-Run `python3 app.py`, open `http://127.0.0.1:5000`. Click the map — or
-type a place name into the search box and pick it from the live
-autocomplete suggestions — to drop a **Start** pin (green "S"), then an
-**End** pin (red "E"), then optionally more stops in between (up to 10
-total). Hit **Solve route** and it:
+Run `python3 app.py`, open `http://127.0.0.1:5000`. Click the map — type a
+place name into the search box and pick it from the live autocomplete
+suggestions — or tap the microphone icon inside the search box and just
+say the place name (built on the browser's own Web Speech API, no extra
+service or API key; the mic only appears in browsers that support it, so
+typing always works as the fallback everywhere) — to drop a **Start** pin
+(green "S"), then an **End** pin (red "E"), then optionally more stops in
+between (up to `MAX_STOPS` total, 40 by default — see "Scaling past a
+dozen stops" below for how it stays fast at that size). Hit **Solve
+route** and it:
 
 1. Gets a real, road-network-based travel-time matrix between all your
    points from OSRM (a public routing engine), not a straight-line
@@ -219,12 +236,29 @@ each vehicle's own depot-to-stops-and-back tour solved exactly with the
 same QUBO/classical solver used everywhere else in this project (see
 `solve_multi_vehicle` in `src/clustering.py`, served by the separate
 `/api/solve_fleet` endpoint so the single-vehicle contract above is
-completely unchanged). **Said plainly:** this is not a capacitated VRP
-solver — no per-vehicle load limits, no time windows, no rebalancing if
-one vehicle's cluster ends up much bigger than another's. What it proves
-is that the underlying solver and architecture generalize past a single
-vehicle, which is the real gap between a TSP demo and a fleet dispatch
-system, without dressing this up as more than it is.
+completely unchanged).
+
+It now also supports a **real, enforced capacity constraint.** Selecting
+multi-vehicle mode reveals a "Max/vehicle" field — set it and no single
+vehicle will be handed more stops than that cap, full stop
+(`_rebalance_for_capacity` in `src/clustering.py` greedily moves points
+off an overloaded cluster onto the nearest under-capacity one's medoid
+until every cluster satisfies the cap). If the requested vehicle count
+can't possibly satisfy the cap you asked for (e.g. 10 stops, cap of 3,
+only 1 vehicle requested), the vehicle count is automatically raised until
+it can (`ceil(stops / capacity)`) rather than silently violating the limit
+or dropping stops — the stats panel says so explicitly when this happens.
+`tests/test_clustering.py`'s capacity tests assert this directly (every
+vehicle's stop count `<= cap`, every stop still assigned exactly once, and
+`n_vehicles` genuinely rising when the requested fleet is too small), and
+it's wired end-to-end through `/api/solve_fleet`'s `max_stops_per_vehicle`
+field. **Said plainly:** this is still not a full capacitated VRP solver —
+no time windows, no per-stop demand weights (a "capacity" here means stop
+*count*, not delivery volume/weight), no simultaneous joint optimization
+across vehicles. What it proves is that the underlying solver and
+architecture generalize past a single vehicle *with* a real constraint
+enforced on top, which is the real gap between a TSP demo and a fleet
+dispatch system, without dressing this up as more than it is.
 
 **Basic API hardening.** `/api/solve` and `/api/solve_fleet` are both
 rate-limited to 20 requests/minute per IP (via `flask-limiter`) so a public
@@ -266,6 +300,16 @@ judge's first ten seconds are visual before they're technical:
   when placed.
 - **Mobile-usable layout.** Panels reflow to full-width and stack sensibly
   under ~860px width instead of overlapping.
+- **Voice search.** A microphone icon inside the search box lets you speak
+  a place name instead of typing it, using the browser's built-in Web
+  Speech API — no external service, no API key. It feature-detects
+  support and only shows itself where the browser actually has it,
+  degrading invisibly (typed search keeps working everywhere) rather than
+  showing a button that doesn't work.
+- **Pan-India city coverage.** The city dropdown now spans 17 cities across
+  every region of India instead of a handful clustered around Delhi NCR
+  and Bengaluru — see "About `multi_city_map.html`" above for the full
+  list and what this dropdown does (and doesn't) gate.
 - **Small credibility details:** an info icon next to the method selector
   explaining in plain language what "quantum-inspired" actually means
   (simulated annealing on a QUBO, on classical hardware — not real quantum
@@ -415,15 +459,19 @@ pip install pytest
 pytest tests/ -v
 ```
 
-**73 Python tests**, covering the QUBO solver, the classical baselines,
-the clustering/scaling logic, the multi-vehicle dispatch demo, the
-congestion model (including the on-demand incident spike), the pluggable
-traffic-provider interface, and the live Flask endpoints — including that
-a 20-stop request (which the old 10-stop limit would have rejected) now
-succeeds end-to-end, that the traffic-awareness fields come back correct
-for a given simulated hour, that an incident spike can actually change the
-chosen route order (not just the displayed number), and that
-`/api/solve_fleet` assigns every stop to exactly one vehicle.
+**150 Python tests** (162 total including the layout suite below), covering
+the QUBO solver, the classical baselines, the clustering/scaling logic,
+the multi-vehicle dispatch demo (including the real per-vehicle capacity
+cap and its auto-raising of vehicle count), the congestion model
+(including the on-demand incident spike), the pluggable traffic-provider
+interface, the pan-India city data (every city has valid India-bounded
+coordinates, enough landmarks for a real route, and a fully connected road
+graph), and the live Flask endpoints — including that a 20-stop request
+(which the old 10-stop limit would have rejected) now succeeds end-to-end,
+that the traffic-awareness fields come back correct for a given simulated
+hour, that an incident spike can actually change the chosen route order
+(not just the displayed number), and that `/api/solve_fleet` assigns every
+stop to exactly one vehicle even under a capacity constraint.
 
 There's also a **6-test frontend suite** (`tests/frontend/`) for the one
 piece of frontend logic that used to have zero coverage — the turn-by-turn
@@ -434,7 +482,38 @@ needs only Node.js 18+ (its built-in test runner, no npm install):
 node --test tests/frontend/*.test.js
 ```
 
-Both suites run automatically on every push via
+**And a 12-test real-browser layout suite** (`tests/test_layout.py`),
+added after a real bug shipped through a fully green test suite and
+several rounds of manual screenshots: the topbar had a fixed height
+combined with `flex-wrap`, so on a narrower browser window its second row
+of controls (Solve route, Clear points) rendered outside the bar, on top
+of the map. Nothing above could have caught that — every other test
+verifies *logic* (routes, costs, API responses), not what a real browser
+actually paints. This suite launches the real `app.py` as a subprocess and
+drives real Chromium against it via Playwright, asserting properties like
+"no topbar control ever renders outside the topbar's own box" at five
+different window widths (375px through 1920px) — and, to prove that's not
+a tautology, temporarily reintroducing the original bug during development
+confirmed these exact tests fail against it. It also locks in a few
+frontend *interaction* behaviors the earlier unit tests couldn't reach
+(multi-vehicle mode relabeling the first pin "Depot," the capacity input
+only appearing once fleet mode is selected, the incident-simulate button
+rendering once per stop, the city dropdown actually offering all 17
+pan-India cities, and the voice-search mic button rendering as a clean
+icon rather than inheriting a stray dropdown-chevron background from the
+topbar's generic button styling — a real bug this suite caught once
+during development, the same day it was added). Needs Playwright, which
+— like pytest — is intentionally not in `requirements.txt` (dev/CI-only,
+and the test file
+skips itself cleanly if it's missing rather than failing the rest of the
+suite):
+
+```
+pip install playwright && playwright install --with-deps chromium
+pytest tests/test_layout.py -v
+```
+
+All three suites run automatically on every push via
 `.github/workflows/tests.yml` — that's the badge at the top of this
 README. Worth running before a demo either way, and worth mentioning to
 judges: the "verified" claims here are checked by an actual, continuously-run

@@ -145,3 +145,58 @@ def test_multi_vehicle_quantum_method_also_works():
         _assert_valid_closed_loop(v["path"], 0)
         all_assigned.extend(v["path"][1:-1])
     assert sorted(all_assigned) == [1, 2, 3, 4]
+
+
+# ---------- capacity constraint (max_stops_per_vehicle) ----------
+
+def test_capacity_is_actually_enforced_on_every_vehicle():
+    """Without a capacity limit, plain farthest-point clustering can (and
+    does, for this seed) hand one vehicle noticeably more stops than
+    another. With max_stops_per_vehicle set, no vehicle may exceed it —
+    this is the property that turns 'first cut' into 'has a real,
+    enforced constraint'."""
+    n = 11  # depot (0) + 10 stops
+    W = _random_matrix(n, seed=42)
+    stop_indices = list(range(1, n))
+    result = solve_multi_vehicle(W, 0, stop_indices, n_vehicles=2, method="classical", max_stops_per_vehicle=3)
+    for v in result["vehicles"]:
+        assert v["stops"] <= 3
+    # every stop still assigned to exactly one vehicle, none dropped/duplicated
+    all_assigned = [s for v in result["vehicles"] for s in v["path"][1:-1]]
+    assert sorted(all_assigned) == stop_indices
+
+
+def test_capacity_auto_raises_vehicle_count_when_requested_fleet_is_too_small():
+    """Asking for 1 vehicle but capping capacity at 3 stops, with 10 stops
+    to place, is impossible to satisfy with 1 vehicle — the function must
+    raise n_vehicles rather than silently violate the cap or drop stops."""
+    n = 11
+    W = _random_matrix(n, seed=7)
+    stop_indices = list(range(1, n))
+    result = solve_multi_vehicle(W, 0, stop_indices, n_vehicles=1, method="classical", max_stops_per_vehicle=3)
+    assert result["n_vehicles"] >= 4  # ceil(10 / 3) = 4
+    for v in result["vehicles"]:
+        assert v["stops"] <= 3
+
+
+def test_capacity_none_preserves_old_unconstrained_behavior():
+    """max_stops_per_vehicle=None (the default) must behave byte-for-byte
+    like before this feature existed — no regression for callers that
+    don't ask for a capacity limit."""
+    n = 7
+    W = _random_matrix(n, seed=3)
+    stop_indices = list(range(1, n))
+    with_none = solve_multi_vehicle(W, 0, stop_indices, n_vehicles=2, method="classical", max_stops_per_vehicle=None)
+    without_arg = solve_multi_vehicle(W, 0, stop_indices, n_vehicles=2, method="classical")
+    assert with_none["n_vehicles"] == without_arg["n_vehicles"]
+    assert [v["path"] for v in with_none["vehicles"]] == [v["path"] for v in without_arg["vehicles"]]
+
+
+def test_capacity_exactly_evenly_divisible_needs_no_extra_vehicles():
+    n = 7  # depot + 6 stops
+    W = _random_matrix(n, seed=1)
+    stop_indices = list(range(1, n))
+    result = solve_multi_vehicle(W, 0, stop_indices, n_vehicles=2, method="classical", max_stops_per_vehicle=3)
+    assert result["n_vehicles"] == 2  # 6 stops / capacity 3 = exactly 2, no need to raise it
+    for v in result["vehicles"]:
+        assert v["stops"] <= 3

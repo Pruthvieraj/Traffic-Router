@@ -237,6 +237,11 @@ def solve_fleet():
     hour = float(body.get("hour", 12.0))
     n_vehicles = int(body.get("n_vehicles", 2))
     depot_index = int(body.get("depot_index", 0))
+    # Optional real capacity constraint: if set, no vehicle's stop count
+    # will exceed this (n_vehicles is auto-raised first if the requested
+    # fleet size couldn't possibly satisfy it) — see
+    # src/clustering.py's solve_multi_vehicle / _rebalance_for_capacity.
+    max_stops_per_vehicle = body.get("max_stops_per_vehicle")
 
     if not isinstance(matrix, list) or len(matrix) < 3:
         return jsonify({"error": "Need at least a depot plus 2 stops to split across vehicles."}), 400
@@ -249,6 +254,13 @@ def solve_fleet():
         return jsonify({"error": "depot_index out of range."}), 400
     if n_vehicles < 1:
         return jsonify({"error": "n_vehicles must be at least 1."}), 400
+    if max_stops_per_vehicle is not None:
+        try:
+            max_stops_per_vehicle = int(max_stops_per_vehicle)
+        except (TypeError, ValueError):
+            return jsonify({"error": "max_stops_per_vehicle must be a whole number."}), 400
+        if max_stops_per_vehicle < 1:
+            return jsonify({"error": "max_stops_per_vehicle must be at least 1."}), 400
 
     try:
         W_free_flow = np.array(matrix, dtype=float) / 60.0
@@ -256,7 +268,8 @@ def solve_fleet():
         stop_indices = [i for i in range(n) if i != depot_index]
 
         result = solve_multi_vehicle(
-            W_congested, depot_index, stop_indices, n_vehicles, method=method, cluster_size=CLUSTER_SIZE,
+            W_congested, depot_index, stop_indices, n_vehicles, method=method,
+            cluster_size=CLUSTER_SIZE, max_stops_per_vehicle=max_stops_per_vehicle,
         )
 
         vehicles_out = []
@@ -280,6 +293,7 @@ def solve_fleet():
             "hour_simulated": hour,
             "method": method,
             "solve_ms": round(result.get("wall_seconds", 0) * 1000),
+            "max_stops_per_vehicle": max_stops_per_vehicle,
         })
 
     except Exception as e:
