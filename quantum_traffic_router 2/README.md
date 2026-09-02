@@ -451,22 +451,29 @@ judge's first ten seconds are visual before they're technical:
   to a PDF for something this simple. Deliberately scoped to single-
   vehicle routes for this first cut, not fleet mode. See
   `tests/test_layout.py`'s two export tests.
-- **Dark / light theme toggle.** A sun/moon button in the topbar switches
-  every glass panel, dropdown, and text color between light and dark via
-  CSS custom properties (the dark topbar itself was already dark in both
-  modes — this toggles the map surroundings and floating panels), **and
-  swaps the street-view map tiles** between CARTO Voyager (light) and CARTO
-  Dark Matter (dark) — added after a real report that, with no route solved
-  yet and the topbar always dark, the only visible change on toggling used
-  to be the sun/moon icon itself, since the map underneath never changed.
-  Satellite view deliberately has no dark variant (it's real aerial
-  photography, not a cartographic style — there's nothing honest to
-  "darken"), so the toggle only affects street view's tiles. Defaults to
-  your OS-level dark-mode preference on a first visit, and remembers an
-  explicit choice in `localStorage` after that, applied before first paint
-  so there's no light-then-dark flash on reload. See
-  `tests/test_layout.py`'s three theme tests (including
-  `test_theme_toggle_also_swaps_the_street_basemap_tiles`).
+- **Dark / light theme toggle — now a real day/night switch, not just an
+  icon flip.** A sun/moon button switches every glass panel, dropdown, and
+  text color between light and dark via CSS custom properties, **swaps the
+  street-view map tiles** between CARTO Voyager (light) and CARTO Dark
+  Matter (dark), and **recolors the topbar itself** (a soft light-lavender
+  gradient with dark ink text in light mode, the original navy/indigo
+  gradient with white text in dark mode) — the topbar used to be hardcoded
+  dark in both themes, which, combined with #stats/#directions staying
+  hidden until a route is solved, meant a real early report was right: the
+  only thing that visibly changed on toggling used to be the sun/moon icon
+  itself. Satellite view deliberately keeps one look in both themes (it's
+  real aerial photography, not a cartographic style — there's nothing
+  honest to "darken"), so only street view's tiles swap. Defaults to your
+  OS-level dark-mode preference on a first visit, and remembers an explicit
+  choice in `localStorage` after that, applied before first paint so
+  there's no light-then-dark flash on reload. See `tests/test_layout.py`'s
+  four theme tests, including `test_theme_toggle_also_swaps_the_street_basemap_tiles`
+  and `test_theme_toggle_also_recolors_the_topbar_itself` (the latter also
+  guards against a real bug caught while building this: a dark-mode
+  dropdown-chevron override with just enough CSS specificity to defeat the
+  ghost/danger buttons' own `background:` shorthand, which briefly
+  resurrected a tiled chevron pattern across every ghost button in dark
+  mode instead of their plain fill).
 - **Precedence ("visit X before Y") rules.** A "Precedence" button opens a
   panel where you can require one stop to be visited before another — a
   pickup before its matching drop-off, say. This is a real constraint
@@ -643,7 +650,7 @@ pip install pytest
 pytest tests/ -v
 ```
 
-**238 Python tests** (275 total including the frontend and layout suites
+**238 Python tests** (277 total including the frontend and layout suites
 below), covering the QUBO solver, the classical baselines, the
 clustering/scaling logic, the multi-vehicle dispatch demo (including the
 real per-vehicle capacity cap — by stop count *or* by per-stop demand
@@ -678,7 +685,7 @@ needs only Node.js 18+ (its built-in test runner, no npm install):
 node --test tests/frontend/*.test.js
 ```
 
-**And a 31-test real-browser layout suite** (`tests/test_layout.py`),
+**And a 33-test real-browser layout suite** (`tests/test_layout.py`),
 added after a real bug shipped through a fully green test suite and
 several rounds of manual screenshots: the topbar had a fixed height
 combined with `flex-wrap`, so on a narrower browser window its second row

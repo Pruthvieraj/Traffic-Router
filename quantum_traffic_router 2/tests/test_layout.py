@@ -636,6 +636,48 @@ def test_theme_toggle_also_swaps_the_street_basemap_tiles(live_server, browser):
     assert dark_on_reload
 
 
+def test_theme_toggle_also_recolors_the_topbar_itself(live_server, browser):
+    """Regression test for a real reported bug: with the topbar hardcoded
+    to the same dark gradient in both themes, and #stats/#directions still
+    hidden before any route is solved, toggling dark mode barely looked
+    like it did anything. The fix makes the topbar itself switch between a
+    light and a dark skin. This also guards against the exact bug that
+    shipped while building that fix: giving the dark-mode dropdown-chevron
+    override enough specificity to beat .ghost/.danger's `background:`
+    shorthand resurrected a tiled chevron background across every ghost
+    button (Import stops, Precedence, Share, Clear points) in dark mode,
+    because those buttons' own shorthand still won for background-repeat/
+    position (reset to their initial repeating values) while the new rule
+    won only for background-image. Real buttons must show no background
+    image at all, in either theme — only <select> elements should."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    topbar_bg_light = page.eval_on_selector("#topbar", "el => getComputedStyle(el).backgroundImage")
+    topbar_text_light = page.eval_on_selector("#topbar", "el => getComputedStyle(el).color")
+
+    page.click("#themeBtn")
+    page.wait_for_function("document.documentElement.getAttribute('data-theme') === 'dark'", timeout=3000)
+
+    topbar_bg_dark = page.eval_on_selector("#topbar", "el => getComputedStyle(el).backgroundImage")
+    topbar_text_dark = page.eval_on_selector("#topbar", "el => getComputedStyle(el).color")
+
+    # The regression: real buttons must never pick up a tiled chevron
+    # background in either theme — only <select> elements should.
+    button_ids = ["#importBtn", "#precedenceBtn", "#clearBtn", "#solveBtn", "#shareBtn", "#themeBtn"]
+    button_bg_images_dark = {
+        sel: page.eval_on_selector(sel, "el => getComputedStyle(el).backgroundImage.includes('svg+xml')")
+        for sel in button_ids
+    }
+    select_bg_repeat_dark = page.eval_on_selector("#citySelect", "el => getComputedStyle(el).backgroundRepeat")
+    page.close()
+
+    assert topbar_bg_light != topbar_bg_dark  # the gradient itself actually differs, not just the icon
+    assert topbar_text_light != topbar_text_dark  # dark ink-on-light vs white-on-dark, not the same color
+    assert not any(button_bg_images_dark.values()), button_bg_images_dark
+    assert select_bg_repeat_dark == "no-repeat"
+
+
 # ---------- precedence ("visit X before Y") rules panel ----------
 
 def test_precedence_panel_lets_you_add_and_remove_a_rule(live_server, browser):

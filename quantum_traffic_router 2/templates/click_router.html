@@ -57,6 +57,31 @@
     --stop-marker-bg: #f6f3ff;
     --stop-marker-color: #6d28d9;
     --directions-text: #2c3e50;
+
+    /* Topbar tokens — the topbar used to be a hardcoded dark gradient in
+       BOTH themes ("chrome," not content), which meant the theme toggle's
+       visible effect was small: with no route solved yet, only the
+       sun/moon icon and the street-view map tiles actually changed. These
+       tokens make the topbar itself re-skin too, so the toggle reads as a
+       real day/night switch rather than a color tweak. */
+    --topbar-bg-1: #f7f7fb;
+    --topbar-bg-2: #eef0fb;
+    --topbar-bg-3: #eae7fb;
+    --topbar-shadow: 0 4px 20px rgba(15, 23, 42, 0.10);
+    --topbar-text: #0f172a;
+    --topbar-muted: #64748b;
+    --topbar-divider: rgba(15, 23, 42, 0.10);
+    --topbar-field-bg: #ffffff;
+    --topbar-field-text: #1e293b;
+    --topbar-field-border: rgba(15, 23, 42, 0.14);
+    --topbar-field-border-hover: rgba(15, 23, 42, 0.28);
+    --topbar-ghost-border: rgba(15, 23, 42, 0.18);
+    --topbar-ghost-text: #334155;
+    --topbar-ghost-hover-bg: rgba(15, 23, 42, 0.05);
+    --topbar-ghost-hover-border: rgba(15, 23, 42, 0.32);
+    --topbar-danger-text: #c62828;
+    --topbar-danger-border: rgba(198, 40, 40, 0.4);
+    --topbar-danger-hover-bg: rgba(198, 40, 40, 0.08);
   }
   /* Dark theme — toggled by #themeBtn, persisted in localStorage, and
      defaulting to the OS/browser preference on a first visit (see the
@@ -83,6 +108,25 @@
     --stop-marker-color: #c4b5fd;
     --directions-text: #dbe4f0;
     --shadow: 0 10px 32px rgba(0, 0, 0, 0.45), 0 1px 4px rgba(0, 0, 0, 0.3);
+
+    --topbar-bg-1: #0b1220;
+    --topbar-bg-2: #161233;
+    --topbar-bg-3: #1b1442;
+    --topbar-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    --topbar-text: #ffffff;
+    --topbar-muted: #8ba0b5;
+    --topbar-divider: rgba(255, 255, 255, 0.14);
+    --topbar-field-bg: #1b2740;
+    --topbar-field-text: #e6ecf5;
+    --topbar-field-border: rgba(255, 255, 255, 0.14);
+    --topbar-field-border-hover: rgba(255, 255, 255, 0.32);
+    --topbar-ghost-border: rgba(255, 255, 255, 0.22);
+    --topbar-ghost-text: #cbd5e1;
+    --topbar-ghost-hover-bg: rgba(255, 255, 255, 0.08);
+    --topbar-ghost-hover-border: rgba(255, 255, 255, 0.4);
+    --topbar-danger-text: #ff8b8b;
+    --topbar-danger-border: rgba(239, 68, 68, 0.5);
+    --topbar-danger-hover-bg: rgba(239, 68, 68, 0.15);
   }
   * { box-sizing: border-box; }
   html, body {
@@ -105,10 +149,11 @@
   #topbar {
     flex: 0 0 auto; min-height: 68px; display: flex; align-items: center; gap: 8px 10px;
     padding: 10px 18px;
-    background: linear-gradient(120deg, #0b1220 0%, #161233 55%, #1b1442 100%);
-    color: white; box-sizing: border-box; flex-wrap: wrap;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    background: linear-gradient(120deg, var(--topbar-bg-1) 0%, var(--topbar-bg-2) 55%, var(--topbar-bg-3) 100%);
+    color: var(--topbar-text); box-sizing: border-box; flex-wrap: wrap;
+    box-shadow: var(--topbar-shadow);
     position: relative; z-index: 900;
+    transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
   }
   #brand { display: flex; align-items: center; gap: 9px; margin-right: 6px; }
   #brand svg { color: var(--accent-cyan); flex-shrink: 0; }
@@ -118,34 +163,55 @@
     background: linear-gradient(120deg, var(--accent-1), var(--accent-2));
     color: white; padding: 2.5px 7px; border-radius: 20px; white-space: nowrap;
   }
-  .divider { width: 1px; height: 26px; background: rgba(255, 255, 255, 0.14); margin: 0 2px; flex-shrink: 0; }
+  .divider { width: 1px; height: 26px; background: var(--topbar-divider); margin: 0 2px; flex-shrink: 0; }
 
+  /* The dropdown-chevron and search-icon glyphs below are inline SVG data
+     URIs, so (unlike everything else in this file) they can't just read a
+     CSS variable for their stroke color — a light-theme rule draws them
+     with a dark stroke, and an html[data-theme="dark"] override further
+     down swaps in a white-stroke version, same picture either way. */
   #topbar select, #topbar button {
     font-family: inherit; font-size: 12.5px; font-weight: 500; padding: 8px 28px 8px 12px;
-    border-radius: 9px; border: 1px solid rgba(255, 255, 255, 0.14);
-    background-color: #1b2740; color: #e6ecf5; cursor: pointer;
+    border-radius: 9px; border: 1px solid var(--topbar-field-border);
+    background-color: var(--topbar-field-bg); color: var(--topbar-field-text); cursor: pointer;
     appearance: none; -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238ba0b5' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2364748b' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 10px center;
-    transition: border-color 0.15s ease, transform 0.1s ease;
+    transition: border-color 0.15s ease, transform 0.1s ease, background-color 0.2s ease, color 0.2s ease;
   }
-  #topbar select:hover { border-color: rgba(255, 255, 255, 0.32); }
+  /* Scoped to <select> only (not "#topbar button" like the rule above) —
+     every real topbar <button> already resets its own `background` via a
+     shorthand (.primary/.danger/.ghost below), which suppresses this
+     chevron entirely. Matching that same broad selector here would win
+     over those shorthands on specificity (this rule adds the [data-theme]
+     attribute, raising it above .ghost/.danger's class-level specificity)
+     WITHOUT also restoring their background-repeat/position, which those
+     shorthands still reset to their initial repeating/0%-0% values — the
+     visible result was a repeating chevron hatch tiled across every ghost
+     button in dark mode. Selects have no such shorthand, so they're safe. */
+  html[data-theme="dark"] #topbar select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238ba0b5' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  }
+  #topbar select:hover { border-color: var(--topbar-field-border-hover); }
   #topbar select:focus { outline: none; border-color: var(--accent-cyan); }
 
   .method-wrap { display: flex; align-items: center; gap: 5px; }
   #capacityInput {
     font-family: inherit; font-size: 12.5px; padding: 8px 10px; width: 118px;
-    border-radius: 9px; border: 1px solid rgba(255, 255, 255, 0.14);
-    background-color: #1b2740; color: #e6ecf5;
+    border-radius: 9px; border: 1px solid var(--topbar-field-border);
+    background-color: var(--topbar-field-bg); color: var(--topbar-field-text);
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
   }
   #capacityInput:focus { outline: none; border-color: var(--accent-cyan); }
-  #capacityInput::placeholder { color: var(--muted); font-size: 11px; }
+  #capacityInput::placeholder { color: var(--topbar-muted); font-size: 11px; }
   #capacityInput::-webkit-inner-spin-button, #capacityInput::-webkit-outer-spin-button { opacity: 0.6; }
   .info-icon {
-    width: 17px; height: 17px; border-radius: 50%; background: rgba(255, 255, 255, 0.12);
-    color: #b9c6d6; font-size: 11px; font-style: normal; display: inline-flex; align-items: center;
+    width: 17px; height: 17px; border-radius: 50%; background: rgba(15, 23, 42, 0.10);
+    color: var(--topbar-muted); font-size: 11px; font-style: normal; display: inline-flex; align-items: center;
     justify-content: center; cursor: help; flex-shrink: 0; user-select: none;
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
+  html[data-theme="dark"] .info-icon { background: rgba(255, 255, 255, 0.12); }
   .info-icon:hover, .info-icon:focus, .info-icon.tip-open {
     background: var(--accent-1); color: white; outline: none;
   }
@@ -174,11 +240,11 @@
   #searchWrap { position: relative; }
   #searchWrap input {
     font-family: inherit; cursor: text; width: 230px; font-size: 12.5px; padding: 8px 30px 8px 32px;
-    border-radius: 9px; border: 1px solid rgba(255, 255, 255, 0.14); background-color: #1b2740;
-    color: #e6ecf5; transition: border-color 0.15s ease, width 0.15s ease;
+    border-radius: 9px; border: 1px solid var(--topbar-field-border); background-color: var(--topbar-field-bg);
+    color: var(--topbar-field-text); transition: border-color 0.15s ease, width 0.15s ease, background-color 0.2s ease, color 0.2s ease;
   }
   #searchWrap input:focus { outline: none; border-color: var(--accent-cyan); width: 260px; }
-  #searchWrap input::placeholder { color: var(--muted); }
+  #searchWrap input::placeholder { color: var(--topbar-muted); }
   /* Higher-specificity selector (#topbar button#micBtn) needed here to win
      over the generic "#topbar select, #topbar button" chevron styling
      below — otherwise every plain <button> in the topbar (this one
@@ -186,7 +252,7 @@
   #topbar button#micBtn {
     position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
     width: 21px; height: 21px; padding: 0; border: none; background: transparent none;
-    color: var(--muted); cursor: pointer; border-radius: 50%; align-items: center;
+    color: var(--topbar-muted); cursor: pointer; border-radius: 50%; align-items: center;
     justify-content: center; transition: color 0.15s ease, background-color 0.15s ease;
   }
   #topbar button#micBtn:hover { color: var(--accent-cyan); background: rgba(34, 211, 238, 0.14); }
@@ -198,7 +264,10 @@
   #searchWrap::before {
     content: ''; position: absolute; left: 11px; top: 50%; width: 13px; height: 13px;
     transform: translateY(-50%); pointer-events: none; opacity: 0.55;
-    background: no-repeat center / contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.4'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M21 21l-4.35-4.35' stroke-linecap='round'/%3E%3C/svg%3E");
+    background: no-repeat center / contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.4'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M21 21l-4.35-4.35' stroke-linecap='round'/%3E%3C/svg%3E");
+  }
+  html[data-theme="dark"] #searchWrap::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.4'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M21 21l-4.35-4.35' stroke-linecap='round'/%3E%3C/svg%3E");
   }
   #suggestions {
     position: absolute; top: 42px; left: 0; width: 320px; max-height: 260px; overflow-y: auto;
@@ -223,10 +292,16 @@
   }
   #topbar button.primary:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(99, 102, 241, 0.6); }
   #topbar button.primary.loading { cursor: progress; }
-  #topbar button.danger { background: transparent; border: 1px solid rgba(239, 68, 68, 0.5); color: #ff8b8b; }
-  #topbar button.danger:hover { background: rgba(239, 68, 68, 0.15); }
-  #topbar button.ghost { background: transparent; border: 1px solid rgba(255, 255, 255, 0.22); color: #cbd5e1; }
-  #topbar button.ghost:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.4); }
+  #topbar button.danger {
+    background: transparent; border: 1px solid var(--topbar-danger-border); color: var(--topbar-danger-text);
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  }
+  #topbar button.danger:hover { background: var(--topbar-danger-hover-bg); }
+  #topbar button.ghost {
+    background: transparent; border: 1px solid var(--topbar-ghost-border); color: var(--topbar-ghost-text);
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  }
+  #topbar button.ghost:hover { background: var(--topbar-ghost-hover-bg); border-color: var(--topbar-ghost-hover-border); }
   #topbar button#themeBtn { padding: 8px 10px; display: inline-flex; align-items: center; justify-content: center; }
 
   .spinner {
