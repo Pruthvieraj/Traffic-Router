@@ -591,6 +591,51 @@ def test_theme_toggle_switches_back_to_light(live_server, browser):
     assert sun_visible
 
 
+def test_theme_toggle_also_swaps_the_street_basemap_tiles(live_server, browser):
+    """Regression test for a real reported bug: the theme toggle correctly
+    flipped every CSS variable, but with the topbar intentionally dark in
+    both themes and no route solved yet (so #stats/#directions are still
+    hidden), the only thing a user actually SAW change was the sun/moon
+    icon — because the street-view map tiles never had a dark counterpart.
+    The fix swaps CARTO Voyager (light) for CARTO Dark Matter (dark) on the
+    street basemap whenever the theme changes, so toggling dark mode is
+    visibly doing something even before any panel is on screen. Satellite
+    view is deliberately excluded (real aerial photography has no honest
+    "dark mode"), so this only asserts the street-view swap."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    page.select_option("#basemapSelect", "street")
+    page.wait_for_timeout(200)
+    assert page.evaluate("map.hasLayer(streetLayer)")
+    assert not page.evaluate("map.hasLayer(streetLayerDark)")
+
+    page.click("#themeBtn")
+    page.wait_for_function("document.documentElement.getAttribute('data-theme') === 'dark'", timeout=3000)
+    assert page.evaluate("map.hasLayer(streetLayerDark)")
+    assert not page.evaluate("map.hasLayer(streetLayer)")
+
+    # Satellite view has no dark variant — switching to it under dark theme
+    # should show the same imagery layer, not remove basemap coverage.
+    page.select_option("#basemapSelect", "satellite")
+    page.wait_for_timeout(200)
+    assert page.evaluate("map.hasLayer(satelliteLayer)")
+    assert not page.evaluate("map.hasLayer(streetLayer)")
+    assert not page.evaluate("map.hasLayer(streetLayerDark)")
+
+    # And a dark preference already applied before first paint (a
+    # returning visitor, via localStorage) should show dark street tiles
+    # immediately on switching to street view, with no extra theme click.
+    page.evaluate("localStorage.setItem('routerTheme', 'dark')")
+    page.reload(wait_until="networkidle")
+    page.select_option("#basemapSelect", "street")
+    page.wait_for_timeout(200)
+    dark_on_reload = page.evaluate("map.hasLayer(streetLayerDark)")
+    page.close()
+
+    assert dark_on_reload
+
+
 # ---------- precedence ("visit X before Y") rules panel ----------
 
 def test_precedence_panel_lets_you_add_and_remove_a_rule(live_server, browser):

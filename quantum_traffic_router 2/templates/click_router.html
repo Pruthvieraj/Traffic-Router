@@ -666,7 +666,37 @@ const streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/v
   subdomains: 'abcd', maxZoom: 20, detectRetina: true,
 });
 
+// Dark counterpart of streetLayer (CARTO "Dark Matter"), same OSM data,
+// same subdomains/retina setup — swapped in automatically whenever the
+// app is in dark theme AND street view is selected (see _syncBasemap()
+// near the theme toggle below). Satellite view has no dark variant on
+// purpose: it's real aerial photography, not a cartographic style, so
+// there's nothing honest to "darken" — the theme toggle only affects the
+// street basemap, same as it only affects the UI chrome, not map imagery.
+const streetLayerDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  subdomains: 'abcd', maxZoom: 20, detectRetina: true,
+});
+
 const map = L.map('map', { layers: [satelliteLayer] }).setView(CENTERS[CITIES[0]], 13);
+
+// Single source of truth for "which basemap tile layer should be showing
+// right now," given both the satellite/street dropdown AND the light/dark
+// theme — called on load, on basemap-select change, and on every theme
+// toggle, so the two controls always agree instead of the street layer
+// only picking up a theme change the next time you touch the dropdown.
+let _activeBasemapLayer = satelliteLayer;
+function _syncBasemap() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const wantsSatellite = document.getElementById('basemapSelect').value === 'satellite';
+  const next = wantsSatellite ? satelliteLayer : (isDark ? streetLayerDark : streetLayer);
+  if (next === _activeBasemapLayer) return;
+  [satelliteLayer, streetLayer, streetLayerDark].forEach((layer) => {
+    if (layer !== next) map.removeLayer(layer);
+  });
+  map.addLayer(next);
+  _activeBasemapLayer = next;
+}
 
 let clickedPoints = [];   // [[lat, lon], ...]
 let pointMarkers = [];    // Leaflet markers for clicked points
@@ -777,10 +807,7 @@ document.getElementById('vehicleSelect').addEventListener('change', () => {
   invalidateRoute(null);
 });
 
-document.getElementById('basemapSelect').addEventListener('change', (e) => {
-  if (e.target.value === 'satellite') { map.removeLayer(streetLayer); map.addLayer(satelliteLayer); }
-  else { map.removeLayer(satelliteLayer); map.addLayer(streetLayer); }
-});
+document.getElementById('basemapSelect').addEventListener('change', _syncBasemap);
 
 // ---------- Dark / light theme toggle ----------
 // The actual theme is applied by the tiny inline script at the top of
@@ -801,7 +828,15 @@ document.getElementById('themeBtn').addEventListener('click', () => {
   else document.documentElement.removeAttribute('data-theme');
   try { localStorage.setItem('routerTheme', goingDark ? 'dark' : 'light'); } catch (err) { /* ignore */ }
   _syncThemeIcon();
+  _syncBasemap();
 });
+
+// Picks up a dark-mode preference that was already applied before first
+// paint (see the inline script at the top of <head>) — without this, a
+// returning dark-mode visitor would see light-mode UI chrome the CSS
+// variables already know is dark, but a light street basemap underneath
+// it, until they touched the basemap dropdown once.
+_syncBasemap();
 
 document.getElementById('citySelect').addEventListener('change', (e) => {
   map.setView(CENTERS[e.target.value], 13);

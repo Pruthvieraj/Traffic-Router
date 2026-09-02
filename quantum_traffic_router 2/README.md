@@ -454,11 +454,19 @@ judge's first ten seconds are visual before they're technical:
 - **Dark / light theme toggle.** A sun/moon button in the topbar switches
   every glass panel, dropdown, and text color between light and dark via
   CSS custom properties (the dark topbar itself was already dark in both
-  modes — this toggles the map surroundings and floating panels). Defaults
-  to your OS-level dark-mode preference on a first visit, and remembers an
+  modes — this toggles the map surroundings and floating panels), **and
+  swaps the street-view map tiles** between CARTO Voyager (light) and CARTO
+  Dark Matter (dark) — added after a real report that, with no route solved
+  yet and the topbar always dark, the only visible change on toggling used
+  to be the sun/moon icon itself, since the map underneath never changed.
+  Satellite view deliberately has no dark variant (it's real aerial
+  photography, not a cartographic style — there's nothing honest to
+  "darken"), so the toggle only affects street view's tiles. Defaults to
+  your OS-level dark-mode preference on a first visit, and remembers an
   explicit choice in `localStorage` after that, applied before first paint
   so there's no light-then-dark flash on reload. See
-  `tests/test_layout.py`'s two theme tests.
+  `tests/test_layout.py`'s three theme tests (including
+  `test_theme_toggle_also_swaps_the_street_basemap_tiles`).
 - **Precedence ("visit X before Y") rules.** A "Precedence" button opens a
   panel where you can require one stop to be visited before another — a
   pickup before its matching drop-off, say. This is a real constraint
