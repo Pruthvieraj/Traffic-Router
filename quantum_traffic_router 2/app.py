@@ -330,6 +330,13 @@ def solve_fleet():
     # exclusive with max_stops_per_vehicle (checked below).
     demands = body.get("demands")
     vehicle_capacity = body.get("vehicle_capacity")
+    # Optional: [[u, v], ...] point-index pairs meaning "u must be visited
+    # before v", same semantics/validation as /api/solve — see
+    # src/clustering.py's solve_multi_vehicle "PRECEDENCE" note for the
+    # honest scope in fleet mode: only enforceable when the fleet split
+    # (decided before precedence is even looked at) happens to keep u and v
+    # on the same vehicle.
+    precedence = body.get("precedence") or []
 
     if not isinstance(matrix, list) or len(matrix) < 3:
         return jsonify({"error": "Need at least a depot plus 2 stops to split across vehicles."}), 400
@@ -375,6 +382,16 @@ def solve_fleet():
             if vehicle_capacity <= 0:
                 return jsonify({"error": "vehicle_capacity must be greater than 0."}), 400
 
+    # Reuse the same generic pair validator /api/solve uses, with the depot
+    # passed as BOTH start_idx and end_idx — it already rejects a pair that
+    # names either boundary role ("can't be required after Start" / "can't
+    # be required before End"), which is exactly right here too: the depot
+    # is always both the fixed start and end of every vehicle's loop, so a
+    # precedence pair naming it wouldn't have a coherent meaning.
+    precedence_error = _validate_precedence(precedence, n, depot_index, depot_index)
+    if precedence_error:
+        return jsonify({"error": precedence_error}), 400
+
     try:
         W_free_flow = np.array(matrix, dtype=float) / 60.0
         W_congested = _traffic_provider.get_congested_matrix(W_free_flow, hour=hour)
@@ -389,10 +406,12 @@ def solve_fleet():
         if demands_by_index is not None:
             demands_for_solver = {idx: demands_by_index.get(idx, 1.0) for idx in stop_indices}
 
+        precedence_tuples = [tuple(p) for p in precedence] or None
         result = solve_multi_vehicle(
             W_congested, depot_index, stop_indices, n_vehicles, method=method,
             cluster_size=CLUSTER_SIZE, max_stops_per_vehicle=max_stops_per_vehicle,
             demands=demands_for_solver, vehicle_capacity=vehicle_capacity,
+            precedence=precedence_tuples,
         )
 
         vehicles_out = []
@@ -409,10 +428,27 @@ def solve_fleet():
                 "demand": v["demand"],
             })
 
+        # Verified against each pair's OWNING vehicle's own path, not the
+        # combined fleet — satisfies_precedence keys off position-in-list,
+        # and a stop only appears in the one vehicle's path it was assigned
+        # to. solve_multi_vehicle already raises ValueError above if a pair
+        # spans two vehicles, so getting here means every pair's u and v
+        # share a single vehicle's path to check this against.
+        precedence_satisfied = True
+        if precedence_tuples:
+            for (u, v) in precedence_tuples:
+                owning_path = next(
+                    (veh["path"] for veh in result["vehicles"] if u in veh["path"] and v in veh["path"]), None,
+                )
+                if owning_path is None or not satisfies_precedence(owning_path, [(u, v)]):
+                    precedence_satisfied = False
+                    break
+
         solve_ms = round(result.get("wall_seconds", 0) * 1000)
         analytics.record_solve(
             "solve_fleet", method, solve_ms,
             demand_weights_used=demands_for_solver is not None,
+            precedence_applied=bool(precedence),
         )
         return jsonify({
             "vehicles": vehicles_out,
@@ -424,6 +460,8 @@ def solve_fleet():
             "solve_ms": solve_ms,
             "max_stops_per_vehicle": max_stops_per_vehicle,
             "vehicle_capacity": vehicle_capacity,
+            "precedence_applied": bool(precedence),
+            "precedence_satisfied": precedence_satisfied,
         })
 
     except ValueError as e:

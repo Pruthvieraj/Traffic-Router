@@ -184,6 +184,29 @@ def test_solve_precedence_trivially_true_pairs_with_start_and_end_are_allowed(cl
     assert resp.status_code == 200
 
 
+def test_solve_precedence_and_incident_compose_in_one_request(client):
+    """Patent-readiness checklist item 9: precedence and incident-triggered
+    re-optimization must actually WORK TOGETHER in a single request, not
+    just pass independently in separate tests — this is what a "these
+    constraints compose" claim needs to be true, verified end-to-end
+    through the live endpoint rather than assumed from each feature's own
+    isolated tests."""
+    matrix = _six_point_matrix()
+    resp = client.post("/api/solve", json={
+        "matrix": matrix, "method": "quantum",
+        "precedence": [[3, 1]],       # forces a non-default visiting order
+        "incident_pairs": [[0, 2]],   # spikes one leg to force re-routing around it
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["incident_applied"] is True
+    assert data["precedence_applied"] is True
+    assert data["precedence_satisfied"] is True
+    order = data["order"]
+    assert sorted(order) == [0, 1, 2, 3, 4, 5]
+    assert order.index(3) < order.index(1)
+
+
 # ---------- /api/solve_fleet (multi-vehicle dispatch demo) ----------
 
 def test_solve_fleet_valid_request(client):
@@ -241,6 +264,71 @@ def test_solve_fleet_rejects_invalid_max_stops_per_vehicle(client):
     matrix = [[0, 1, 2, 3], [1, 0, 4, 5], [2, 4, 0, 6], [3, 5, 6, 0]]
     resp = client.post("/api/solve_fleet", json={"matrix": matrix, "method": "classical", "max_stops_per_vehicle": 0})
     assert resp.status_code == 400
+
+
+# ---------- precedence in fleet mode (patent-readiness checklist item 8) ----------
+#
+# Precedence only has a coherent meaning in fleet mode when the fleet split
+# keeps both stops of a pair on the same vehicle — these tests cover the
+# success path (forced onto one vehicle) and the honest failure path (split
+# across vehicles must be a clean 400, never a silently-wrong route or a 500).
+
+def _seven_point_fleet_matrix():
+    n = 7  # depot (0) + 6 stops
+    return [[abs(i - j) * 90.0 for j in range(n)] for i in range(n)]
+
+
+def test_solve_fleet_with_precedence_on_a_single_vehicle(client):
+    matrix = _seven_point_fleet_matrix()
+    resp = client.post("/api/solve_fleet", json={
+        "matrix": matrix, "method": "classical", "n_vehicles": 1, "precedence": [[5, 3]],
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["precedence_applied"] is True
+    assert data["precedence_satisfied"] is True
+    order = data["vehicles"][0]["order"]
+    assert order.index(5) < order.index(3)
+
+
+def test_solve_fleet_without_precedence_flags_it_false_but_satisfied(client):
+    matrix = _seven_point_fleet_matrix()
+    resp = client.post("/api/solve_fleet", json={"matrix": matrix, "method": "classical", "n_vehicles": 2})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["precedence_applied"] is False
+    assert data["precedence_satisfied"] is True  # vacuously true — nothing to violate
+
+
+def test_solve_fleet_rejects_precedence_naming_the_depot(client):
+    matrix = _seven_point_fleet_matrix()
+    resp = client.post("/api/solve_fleet", json={
+        "matrix": matrix, "method": "classical", "precedence": [[0, 3]],
+    })
+    assert resp.status_code == 400
+
+
+def test_solve_fleet_rejects_malformed_precedence(client):
+    matrix = _seven_point_fleet_matrix()
+    resp = client.post("/api/solve_fleet", json={
+        "matrix": matrix, "method": "classical", "precedence": [[1]],
+    })
+    assert resp.status_code == 400
+
+
+def test_solve_fleet_precedence_split_across_vehicles_is_a_clean_400(client):
+    """When the fleet split happens to put the two stops on different
+    vehicles, this must surface as a client-facing 400 with a clear
+    explanation — not an unhandled 500 — since solve_multi_vehicle raises
+    ValueError for exactly this case and app.py's except ValueError branch
+    is what's supposed to turn that into a 400."""
+    matrix = _seven_point_fleet_matrix()
+    resp = client.post("/api/solve_fleet", json={
+        "matrix": matrix, "method": "classical", "n_vehicles": 6,  # one stop per vehicle
+        "precedence": [[1, 2]],
+    })
+    assert resp.status_code == 400
+    assert "vehicle" in resp.get_json()["error"].lower()
 
 
 # ---------- per-stop demand weights (demands + vehicle_capacity) ----------

@@ -349,3 +349,82 @@ def test_no_demands_leaves_demand_field_none():
     W = _random_matrix(n, seed=2)
     result = solve_multi_vehicle(W, 0, list(range(1, n)), n_vehicles=2, method="classical")
     assert all(v["demand"] is None for v in result["vehicles"])
+
+
+# ---------- precedence in multi-vehicle mode (patent-readiness checklist item 8) ----------
+#
+# Precedence in multi-vehicle mode only means something if the fleet split
+# happens to keep both stops of a pair on the SAME vehicle — that split is
+# decided first, with no awareness of precedence at all, so these tests
+# cover both outcomes: a same-vehicle pair must actually be honored (using
+# the depot-anchored open-path solver under the hood, not the closed-loop
+# one — see solve_multi_vehicle's "PRECEDENCE" docstring section for why),
+# and a cross-vehicle pair must raise loudly instead of quietly ignoring it.
+
+def test_precedence_is_honored_when_forced_onto_one_vehicle_classical():
+    from qubo_tsp import satisfies_precedence
+
+    n = 7
+    W = _random_matrix(n, seed=5)
+    stop_indices = list(range(1, n))
+    precedence = [(2, 5)]
+    # n_vehicles=1 guarantees every stop (and thus both ends of the pair)
+    # lands on the same, only, vehicle.
+    result = solve_multi_vehicle(W, 0, stop_indices, n_vehicles=1, method="classical", precedence=precedence)
+    assert len(result["vehicles"]) == 1
+    path = result["vehicles"][0]["path"]
+    _assert_valid_closed_loop(path, depot=0)
+    assert satisfies_precedence(path, precedence)
+
+
+def test_precedence_is_honored_when_forced_onto_one_vehicle_quantum():
+    from qubo_tsp import satisfies_precedence
+
+    n = 9
+    W = _random_matrix(n, seed=6)
+    stop_indices = list(range(1, n))
+    precedence = [(3, 7)]
+    result = solve_multi_vehicle(W, 0, stop_indices, n_vehicles=1, method="quantum", precedence=precedence)
+    assert len(result["vehicles"]) == 1
+    path = result["vehicles"][0]["path"]
+    _assert_valid_closed_loop(path, depot=0)
+    assert satisfies_precedence(path, precedence)
+    # sanity: reported cost matches independently recomputing it from the path
+    assert result["total_cost"] == pytest.approx(open_path_length(path, W))
+
+
+def test_precedence_across_vehicles_raises_instead_of_silently_ignoring():
+    n = 6
+    W = _random_matrix(n, seed=7)
+    stop_indices = list(range(1, n))
+    # One vehicle per stop guarantees any pair spans two different vehicles.
+    with pytest.raises(ValueError, match="different vehicles"):
+        solve_multi_vehicle(
+            W, 0, stop_indices, n_vehicles=len(stop_indices), method="classical",
+            precedence=[(stop_indices[0], stop_indices[1])],
+        )
+
+
+def test_precedence_referencing_a_non_stop_index_raises():
+    """A precedence pair naming the depot (or any index outside
+    stop_indices) can't be assigned to any vehicle's cluster at all —
+    must be a clear error, not a KeyError or a silently-dropped rule."""
+    n = 6
+    W = _random_matrix(n, seed=7)
+    stop_indices = list(range(1, n))
+    with pytest.raises(ValueError, match="isn't in stop_indices"):
+        solve_multi_vehicle(W, 0, stop_indices, n_vehicles=2, method="classical", precedence=[(0, stop_indices[0])])
+
+
+def test_precedence_leaves_other_vehicles_unaffected():
+    """Only the vehicle(s) that actually own an applicable precedence pair
+    should switch to the anchored-open-path solve path — every other
+    vehicle must still come back as an ordinary, valid closed loop."""
+    n = 9
+    W = _random_matrix(n, seed=6)
+    stop_indices = list(range(1, n))
+    result = solve_multi_vehicle(W, 0, stop_indices, n_vehicles=1, method="classical", precedence=[(3, 7)])
+    for v in result["vehicles"]:
+        _assert_valid_closed_loop(v["path"], depot=0)
+    # total_cost must still equal the sum of the individual vehicle costs
+    assert result["total_cost"] == pytest.approx(sum(v["cost"] for v in result["vehicles"]))

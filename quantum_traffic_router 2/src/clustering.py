@@ -42,6 +42,7 @@ from baseline import (
     nearest_neighbor_2opt_open_path,
     nearest_neighbor_2opt_open_path_with_precedence_repair,
     nearest_neighbor_2opt,
+    nearest_neighbor_2opt_with_precedence_repair,
 )
 
 
@@ -257,6 +258,7 @@ def solve_multi_vehicle(
     W: np.ndarray, depot_idx: int, stop_indices: list[int], n_vehicles: int,
     method: str = "quantum", cluster_size: int = 9, max_stops_per_vehicle: int | None = None,
     demands: dict[int, float] | None = None, vehicle_capacity: float | None = None,
+    precedence: list[tuple[int, int]] | None = None,
 ) -> dict:
     """A first step toward real Vehicle Routing (VRP), past the single-
     vehicle fixed-start/fixed-end case everything else in this project
@@ -312,6 +314,28 @@ def solve_multi_vehicle(
     with a real constraint enforced on top — the gap between a single TSP
     demo and a fleet dispatch system — without pretending to be a
     production VRP engine.
+
+    PRECEDENCE (optional, `precedence`): a list of (u, v) interior-stop-index
+    pairs meaning "u must be visited before v" — same semantics as the
+    single-vehicle open-path solver's `precedence` parameter. HONEST SCOPE:
+    a precedence pair only means something if both stops end up on the SAME
+    vehicle — the fleet split decides that (see HOW STOPS ARE SPLIT above)
+    before precedence is even considered, so if the split happens to put u
+    and v on different vehicles, this raises ValueError rather than
+    silently dropping the constraint. For whichever vehicle does own an
+    applicable pair, that vehicle's leg is solved with the depot pinned as
+    BOTH the fixed start and fixed end of the already-tested open-path
+    solver (`solve_open_path_quantum_inspired(..., start_idx=0, end_idx=0,
+    precedence=...)` on that vehicle's local sub-problem), not the ordinary
+    closed-loop solver — a closed loop's raw position labeling is only
+    unique up to rotation (every rotation of the same cycle costs the same),
+    so "u's position < v's position" is only meaningful against the exact
+    un-rotated labeling the solver produced, and this function's own
+    depot-first display rotation further down would otherwise risk flipping
+    the apparent order of any pair straddling the rotation point. Anchoring
+    the depot as both endpoints sidesteps the ambiguity entirely by reusing
+    machinery that never had it. Vehicles with no applicable precedence
+    pair are unaffected and keep using the plain closed-loop solver.
 
     Returns {"vehicles": [{"vehicle", "path", "cost", "stops", "demand"},
     ...], "total_cost", "n_vehicles", "wall_seconds"}. Each vehicle's
@@ -407,9 +431,42 @@ def solve_multi_vehicle(
             clusters = _cluster_indices(W, stop_indices, n_vehicles)
             clusters = _rebalance_for_capacity(W, clusters, effective_cap, weights=weights)
 
-    def _solve_small(w):
+    # Precedence only means something if both stops of a pair landed on the
+    # same vehicle — the split above was decided without any awareness of
+    # precedence, so check that now and group applicable pairs by vehicle
+    # (cluster index) rather than silently drop or half-enforce anything.
+    precedence_by_cluster: dict[int, list[tuple[int, int]]] = {}
+    if precedence:
+        cluster_of: dict[int, int] = {}
+        for ci, c in enumerate(clusters):
+            for idx in c:
+                cluster_of[idx] = ci
+        for (u, v) in precedence:
+            cu, cv = cluster_of.get(u), cluster_of.get(v)
+            if cu is None or cv is None:
+                raise ValueError(f"Precedence pair ({u}, {v}) references a stop that isn't in stop_indices.")
+            if cu != cv:
+                raise ValueError(
+                    f"Precedence pair ({u}, {v}) can't be enforced: the fleet split placed these two "
+                    f"stops on different vehicles (vehicle {cu} and vehicle {cv}), and a precedence "
+                    "rule can't be enforced across vehicles. Try fewer vehicles, or remove this rule."
+                )
+        for (u, v) in precedence:
+            precedence_by_cluster.setdefault(cluster_of[u], []).append((u, v))
+
+    def _solve_small(w, prec=None):
         if method == "classical":
+            if prec:
+                return nearest_neighbor_2opt_with_precedence_repair(w, prec, start=0)
             return nearest_neighbor_2opt(w, start=0)
+        if prec:
+            # Anchor the depot (local index 0) as both the fixed start and
+            # fixed end of the open-path solver, instead of the ordinary
+            # closed-loop solver — see the "PRECEDENCE" note in this
+            # function's docstring for why a closed loop's rotation-
+            # ambiguous position labeling makes "before" ill-defined here.
+            result = solve_open_path_quantum_inspired(w, start_idx=0, end_idx=0, precedence=prec)
+            return {"tour": result["path"][:-1], "cost": result["cost"]}
         return solve_quantum_inspired(w)
 
     vehicles = []
@@ -417,14 +474,18 @@ def solve_multi_vehicle(
     for vid, cluster in enumerate(clusters):
         local_ids = [depot_idx] + list(cluster)
         sub_W = W[np.ix_(local_ids, local_ids)]
-        res = _solve_small(sub_W)
+        local_prec = None
+        if vid in precedence_by_cluster:
+            local_prec = [(local_ids.index(u), local_ids.index(v)) for (u, v) in precedence_by_cluster[vid]]
+        res = _solve_small(sub_W, prec=local_prec)
         tour_local = res["tour"]
 
         # Rotate the closed loop so the depot (local index 0) comes first,
         # then explicitly repeat it at the end — makes the path readable
         # ("depot -> stops -> depot") and lets open_path_length() double as
         # a closed-loop cost check (the repeated depot captures the return
-        # leg too).
+        # leg too). When precedence anchored the depot at both ends above,
+        # tour_local already starts at local index 0, so this is a no-op.
         zero_pos = tour_local.index(0)
         rotated = tour_local[zero_pos:] + tour_local[:zero_pos]
         full_local_path = rotated + [rotated[0]]

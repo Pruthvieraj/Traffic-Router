@@ -480,17 +480,40 @@ judge's first ten seconds are visual before they're technical:
   baked directly into the same QUBO/classical solve (extending
   `build_open_path_bqm` in `src/qubo_tsp.py` to accept `precedence`,
   mirroring the pattern `build_tsp_bqm` already used for the closed-loop
-  case), not a filter applied to the result afterward. Honest scope: it's
-  single-vehicle only, and only supported up to the same interior-stop
-  count a single QUBO can solve directly (`CLUSTER_SIZE`, 9 by default) —
-  above that, stops get split across independently-solved clusters and a
-  cross-cluster precedence pair can't be reliably enforced, so the API
-  returns a clear 400 rather than silently ignoring it. Rules track the
-  actual stops as the route gets (re-)solved (remapped through the solved
-  order automatically) but are dropped if you add or remove a stop, since
-  positions shift. See `tests/test_qubo_tsp.py`,
-  `tests/test_clustering.py`, `tests/test_app.py`, and
+  case), not a filter applied to the result afterward. Honest scope: only
+  supported up to the same interior-stop count a single QUBO can solve
+  directly (`CLUSTER_SIZE`, 9 by default) — above that, stops get split
+  across independently-solved clusters and a cross-cluster precedence pair
+  can't be reliably enforced, so the API returns a clear 400 rather than
+  silently ignoring it. Rules track the actual stops as the route gets
+  (re-)solved (remapped through the solved order automatically) but are
+  dropped if you add or remove a stop, since positions shift. See
+  `tests/test_qubo_tsp.py`, `tests/test_clustering.py`, `tests/test_app.py`
+  (including `test_solve_precedence_and_incident_compose_in_one_request`,
+  which proves precedence and incident-triggered re-optimization actually
+  work TOGETHER in one request, not just independently), and
   `tests/test_layout.py`'s precedence tests.
+
+  `/api/solve_fleet` (multi-vehicle mode) now accepts the same
+  `precedence` field too — `solve_multi_vehicle` in `src/clustering.py`
+  enforces it on whichever vehicle a pair's two stops both land on, by
+  solving that vehicle's leg with the depot pinned as both the fixed start
+  *and* fixed end of the already-tested open-path solver, instead of the
+  ordinary closed-loop one (a closed loop's position labeling is only
+  unique up to rotation, which would otherwise make "before" ill-defined
+  after the depot-first display rotation every vehicle's tour gets). Since
+  which vehicle a stop lands on is decided by clustering *before*
+  precedence is ever looked at, a pair split across two vehicles can't be
+  enforced — the API returns a clear 400 naming both vehicles rather than
+  silently dropping the rule. See `tests/test_clustering.py`'s
+  precedence-in-fleet-mode tests and `tests/test_app.py`'s
+  `test_solve_fleet_*precedence*` tests. The click-map UI's Precedence
+  button still only appears in single-vehicle mode, on purpose: the UI
+  can't know in advance which vehicle a stop will be clustered onto, so
+  offering the rule builder in fleet mode would mean rules that
+  unpredictably 400 depending on how the split happens to fall — an API
+  consumer that already knows its own stop-to-vehicle assignment (or that
+  pins `n_vehicles=1`) doesn't have that problem.
 - **Small credibility details:** an info icon next to the method selector
   explaining in plain language what "quantum-inspired" actually means
   (simulated annealing on a QUBO, on classical hardware — not real quantum
@@ -650,12 +673,16 @@ pip install pytest
 pytest tests/ -v
 ```
 
-**238 Python tests** (277 total including the frontend and layout suites
+**249 Python tests** (282 total including the frontend and layout suites
 below), covering the QUBO solver, the classical baselines, the
 clustering/scaling logic, the multi-vehicle dispatch demo (including the
 real per-vehicle capacity cap — by stop count *or* by per-stop demand
 weight — and its auto-raising of vehicle count in either mode), the
-precedence ("visit X before Y") constraint on the open-path solver, the
+precedence ("visit X before Y") constraint on both the single-vehicle
+open-path solver *and* the multi-vehicle dispatch demo (including that it
+composes with incident-triggered re-optimization in a single request, and
+that a precedence pair split across two vehicles by the fleet clustering
+step fails as a clean 400 instead of a silently-wrong route), the
 congestion model (including the on-demand incident spike), the pluggable
 traffic-provider interface, the pan-India city data (every city has valid
 India-bounded coordinates, enough landmarks for a real route, and a fully
@@ -969,9 +996,33 @@ positioned on that trajectory.
 
 ## Patent note
 
-See the main research report (`SIH_2026_Idea_Research_Heer.docx` /
-`.md`) for the full patentability discussion and filing process. The one
-addition after actually building this: **write your provisional patent's
-Form 2 around the constraint-composability finding (Experiment 2), not a
-speed/quality claim over classical routing** — that's the part that's
-both true and defensible.
+Two research documents cover this — read
+**`SIH_2026_Patent_Readiness_Research_Heer.docx`** first; it supersedes the
+patent-facing framing in the earlier `SIH_2026_Idea_Research_Heer.docx` /
+`.md`, which was written before a closer prior-art pass.
+
+**The short version:** a follow-up novelty search found a February 2026
+peer-reviewed paper (Curuliuc & Leon, *Applied Sciences*) that already
+describes the exact mechanism this project's constraint code relies on —
+encoding a routing constraint directly as a QUBO penalty term so it's
+satisfied *by construction* rather than filtered after the fact
+(`add_precedence_penalty()` / `build_open_path_bqm` in `src/qubo_tsp.py`).
+**That mechanism on its own is not a patentable finding — do not write a
+provisional claim headlined by it.** What's left to realistically claim
+(the research doc's "Tier 2" scope) is the specific *system*: a live,
+traffic-congestion-aware QUBO router where precedence, demand-weighted
+per-vehicle capacity, multi-vehicle dispatch, and on-demand incident
+re-optimization all compose together in one working pipeline, not each
+sitting alone as an isolated feature. That composed claim had to actually
+be *true in the code* before it could honestly go in a filing — it now is:
+precedence works in multi-vehicle mode too (`solve_multi_vehicle`'s
+`precedence` parameter, `src/clustering.py` — see "Precedence" above for
+the honest scope of when a fleet split lets it apply), and
+`tests/test_app.py::test_solve_precedence_and_incident_compose_in_one_request`
+verifies precedence and incident-triggered re-optimization actually
+compose in one request rather than only being tested independently.
+
+Before filing anything: have a patent professional (your institution's IPR
+cell, or a registered patent agent) re-run the novelty search specifically
+against this narrowed Tier 2 claim — everything in this repo's own search
+is a good-faith pass by a non-lawyer, not a substitute for one.
