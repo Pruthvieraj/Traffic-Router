@@ -3,6 +3,7 @@ numpy>=1.24
 matplotlib>=3.7
 dimod>=0.12
 dwave-samplers>=1.8
+dwave-system>=1.28
 folium>=0.20
 flask>=3.0
 flask-limiter>=3.5
