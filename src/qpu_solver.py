@@ -18,10 +18,13 @@ support) and submits it to a real chip via
 `dwave.system.EmbeddingComposite(dwave.system.DWaveSampler())`, instead of
 classically simulating one.
 
-WHAT THIS NEEDS THAT NOTHING ELSE IN THIS PROJECT DOES: your own free
-D-Wave Leap account and API token — see README.md's "Real quantum hardware
-validation" section for the one-time setup (`pip install dwave-system`,
-then `export DWAVE_API_TOKEN=...` or `dwave setup`). This is NOT needed to
+WHAT THIS NEEDS THAT NOTHING ELSE IN THIS PROJECT DOES: your own D-Wave
+Leap API token from a plan that actually includes API access — see
+README.md's "Real quantum hardware validation" section for the full setup
+and the honest correction that free self-serve Leap signup does NOT get
+you a usable token (only a paid plan or an accepted Leap Quantum LaunchPad
+application does). Once you have a real token: `pip install dwave-system`,
+then `export DWAVE_API_TOKEN=...` or `dwave setup`. This is NOT needed to
 run main.py, app.py, or any test in this project: every solve function here
 accepts an optional `sampler=` override used ONLY by
 `tests/test_qpu_solver.py` to inject a lightweight stand-in with the same

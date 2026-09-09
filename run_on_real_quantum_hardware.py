@@ -23,22 +23,41 @@ This script is now a thin demo/report wrapper around
 QPU is a first-class solver mode here, not a one-off script with its own
 separate hardware-submission logic to keep in sync.
 
-WHAT THIS NEEDS THAT NOTHING ELSE HERE DOES: a free D-Wave Leap account.
-This is NOT required to run app.py, main.py, or anything else in this
-project — it's a one-time credibility artifact for your pitch deck, run
-once on your own machine, not part of the live demo's normal code path.
+WHAT THIS NEEDS THAT NOTHING ELSE HERE DOES: a D-Wave Leap API token from
+a plan that actually includes API access — that part genuinely can't be
+done for you, on a local run or a deployed one. The SDK itself
+(`dwave-system`) is a normal `requirements.txt` dependency now (it used to
+be an opt-in extra installed only for this script, back when method="qpu"
+wasn't wired into the live app yet), so a fresh `pip install -r
+requirements.txt` already has it — only the account/token step below is
+still yours to do.
 
-SETUP (one-time, a few minutes):
-  1. Sign up free at https://cloud.dwavesys.com/leap/ (no credit card
-     needed). New accounts get a small monthly allotment of real QPU
-     access time — check the current details on signup, but it's measured
-     in seconds, because real quantum hardware time is scarce/expensive.
-     This script's settings (100 reads on a ~9-variable problem) use a
-     tiny fraction of a typical allotment.
-  2. Install the SDK (only needed for this script and method="qpu"):
-         pip install dwave-system
-  3. Get your API token from the Leap dashboard (top right, "API Token"),
-     then either run the interactive setup:
+IMPORTANT, checked against D-Wave's own support docs (not assumed): the
+free self-serve signup at https://cloud.dwavesys.com/leap/ gives you a
+Trial plan, and Trial (and, per D-Wave's own Feb 2025 update, Developer)
+plan accounts do NOT get an API token — only access to D-Wave's pre-built
+demos in the dashboard. Submitting your own jobs via `dwave-system` (what
+this script does) needs a paid Leap customer plan (see
+https://cloud.dwavesys.com/leap/plans for current pricing) or D-Wave's
+application-based Leap Quantum LaunchPad program for businesses/academic
+institutions (https://www.dwavequantum.com/quantum-launchpad/). This is
+genuinely the one step in this whole project that costs money or requires
+an application, not five free minutes.
+
+SETUP (one-time):
+  1. Get access to a Leap plan that includes an API token (see above —
+     paid plan, or an accepted LaunchPad application). New token-eligible
+     accounts typically get some monthly allotment of real QPU access
+     time — check the current details for your specific plan, but it's
+     usually measured in seconds, because real quantum hardware time is
+     scarce/expensive. This script's settings (100 reads on a
+     ~9-variable problem) use a tiny fraction of a typical allotment.
+  2. If you installed this project's dependencies some other way and
+     don't have the SDK yet: `pip install dwave-system`.
+  3. Get your API token from the Leap dashboard (top right, "API Token") —
+     if there's no token shown there at all, that's D-Wave's own signal
+     that your current plan doesn't include API access, not a bug here.
+     Once you have a real token, either run the interactive setup:
          dwave setup
      or just set an environment variable before running this script:
          export DWAVE_API_TOKEN="your-token-from-the-Leap-dashboard"

@@ -1227,24 +1227,74 @@ to duplicate and drift.
 
 **This is the one item in the "10/10" punch list that genuinely can't be
 done for you** — actually running on hardware needs *your* D-Wave Leap
-account and API token, which no one else can supply. It's 5 minutes,
-though:
+account and API token, which no one else can supply, on both a local run
+and a deployed one (Render, etc.). `dwave-system` itself IS in
+`requirements.txt` (so a fresh install/deploy already has the package —
+this used to be an opt-in extra, back when only the standalone
+`run_on_real_quantum_hardware.py` script needed it; now the live app's
+"Real QPU" dropdown option needs it too), but the package alone doesn't
+turn real hardware on.
 
-1. Sign up free at <https://cloud.dwavesys.com/leap/> (no credit card).
-2. `pip install dwave-system` (deliberately NOT in `requirements.txt` —
-   see the comment there — since it's the one dependency this project
-   doesn't need unless you want real hardware).
-3. Grab your API token from the Leap dashboard (top right, "API Token"),
-   then: `export DWAVE_API_TOKEN="your-token-here"`
-4. Either `python3 run_on_real_quantum_hardware.py` for the pitch-deck
+**Correction, and this matters:** an earlier version of this section said
+signing up was free and took 5 minutes. That was wrong — checked against
+D-Wave's own current support docs while debugging exactly this with a
+user, not assumed. As of D-Wave's own help center (checked September
+2026): the self-serve **Trial plan you get from signing up at
+<https://cloud.dwavesys.com/leap/> genuinely does NOT include an API
+token** — Trial (and, per a Feb 2025 support update, Developer) plan
+accounts can only run D-Wave's own pre-built demos from the Leap
+dashboard, not submit their own jobs via `DWaveSampler`/`dwave-system`,
+which is exactly what this project's `method="qpu"` needs. An API token
+that actually works requires a **paid** Leap customer plan — see
+<https://cloud.dwavesys.com/leap/plans> for current pricing, which
+isn't published in a way this README can quote reliably (it's account/
+quote-driven) — or D-Wave's application-based **Leap Quantum
+LaunchPad** program (aimed at businesses/academic institutions,
+advertised as a 3-month free trial; worth checking if your institution
+qualifies, but it's an application process, not instant self-serve
+signup: <https://www.dwavequantum.com/quantum-launchpad/>).
+
+If you do get a working token (paid plan, LaunchPad, or otherwise), the
+mechanics are unchanged:
+
+1. Grab your API token from the Leap dashboard (top right, "API Token") —
+   if you don't see one there at all, that's D-Wave's own signal that
+   your current plan doesn't include API access.
+2. Set it as `DWAVE_API_TOKEN` wherever the app actually runs:
+   - **Local run:** `export DWAVE_API_TOKEN="your-token-here"` in the same
+     shell before `python3 app.py`.
+   - **Render (or another host):** your terminal's `export` only reaches
+     your own machine — a deployed server needs the token set in *its own*
+     environment. On Render: your service → **Environment** tab → **Add
+     Environment Variable** → key `DWAVE_API_TOKEN`, value your token →
+     save, which redeploys the service. (Other hosts have an equivalent
+     "environment variables" or "secrets" settings page.)
+3. Either `python3 run_on_real_quantum_hardware.py` for the pitch-deck
    artifact (a comparison table + `output/real_quantum_hardware_result.md`,
    quote or screenshot it when a judge asks "is this actually quantum, or
    just named that"), or pass `"method": "qpu"` to `/api/solve` /
    `/api/solve_fleet` for a live, real-hardware-backed solve in the app
-   itself — or, now, just pick "Real QPU (D-Wave annealer)" from the
-   click-map UI's method dropdown directly (it was API-only before; the
-   dropdown previously only offered Quantum-inspired/Classical even though
-   the backend already supported `qpu` everywhere).
+   itself — or just pick "Real QPU (D-Wave annealer)" from the click-map
+   UI's method dropdown directly.
+
+**If you don't get/can't afford a token:** that's a legitimate place to
+land, and worth saying to judges plainly rather than glossing over — the
+QPU integration itself is real, tested, and not a stub (see
+`tests/test_qpu_solver.py`'s 11 tests, which exercise the actual
+`dwave.system` code paths via an injected stand-in sampler, plus the
+real "no token configured" failure path checked unmocked, not skipped).
+What's gated behind a paid account is only the literal act of submitting
+a job to physical hardware and getting a chip ID/annealing-time back —
+everything else (the identical BQM construction, the decode/selection
+logic, the clean error handling) is already built and verifiable without
+paying anything.
+
+If you've done all of the above (real token, on a plan that actually
+includes API access) on a deployed app and `method="qpu"` still fails:
+check that specific service's build log to confirm `dwave-system`
+actually installed, and double check the environment variable is spelled
+exactly `DWAVE_API_TOKEN` and attached to the same service that's
+actually serving the request.
 
 **Without a token configured** (this project's default, and this
 sandbox's own actual state while building this feature — the failure
@@ -1422,8 +1472,10 @@ this is knowing which half is done:
   a real D-Wave QPU via `method="qpu"`, a first-class option everywhere
   `method="quantum"`/`"classical"` already work (see "Real quantum
   hardware validation"). What's NOT done, because it can't be from here:
-  actually running it, which needs your own free D-Wave Leap account and
-  API token — this sandbox has neither, so the wiring is tested via a
+  actually running it, which needs your own D-Wave Leap API token from a
+  plan that includes API access (see "Real quantum hardware validation"
+  for why the free self-serve Trial plan doesn't qualify) — this sandbox
+  has neither that plan nor a token, so the wiring is tested via a
   dependency-injected stand-in sampler and this sandbox's own real,
   unmocked "no token configured" failure, not a live hardware run.
 - **Real live traffic** — `src/traffic_provider.py`'s

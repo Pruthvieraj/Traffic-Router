@@ -33,10 +33,25 @@ requests>=2.31
 # provider is selected AND a GOOGLE_ROUTES_API_KEY is configured; the
 # default TRAFFIC_PROVIDER=simulated never imports it for real network use.
 #
-# dwave-system is NOT listed above on purpose — it's only needed if you
-# run run_on_real_quantum_hardware.py (a one-time pitch-deck credibility
-# script, not part of the app). Install it separately when you want that:
-#     pip install dwave-system
+# dwave-system IS listed above (unlike ortools/qiskit/playwright below) —
+# this used to be an optional extra, installed separately only for
+# run_on_real_quantum_hardware.py's one-off pitch-deck script. It's a
+# default dependency now because method="qpu" is a first-class option in
+# the LIVE app too (the "Real QPU (D-Wave annealer)" dropdown choice, wired
+# through /api/solve and /api/solve_fleet — see src/qpu_solver.py), and a
+# deployed server can't offer that option at all if the package was never
+# installed on it in the first place. Installing the package does NOT by
+# itself make real QPU solves work — see README.md's "Real quantum
+# hardware validation" section: you still need your own D-Wave Leap API
+# token (DWAVE_API_TOKEN) from a plan that actually includes API access,
+# which nobody else can supply on your behalf. That last part is NOT free
+# self-serve signup — D-Wave's own support docs say the free Trial plan
+# does not include an API token, only their pre-built dashboard demos; a
+# working token needs a paid Leap plan or an accepted application to
+# D-Wave's Leap Quantum LaunchPad program. Confirmed installing cleanly
+# (no native build step failed) in this project's own dev/test
+# environment; Render's build log is the real check for your deployment
+# specifically.
 #
 # ortools is also NOT listed above on purpose — it's a large native
 # dependency used only by src/ortools_baseline.py, an optional third
