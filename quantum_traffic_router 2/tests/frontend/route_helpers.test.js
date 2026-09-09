@@ -19,6 +19,7 @@ const path = require('node:path');
 const {
   stopLabel, formatHour, formatDistance, ordinal, maneuverText, buildDirections,
   advanceSimulatedHour, shouldTriggerIncident, pickIncidentLeg, describeLiveTick,
+  fleetOrderChanged,
 } = require(path.join(__dirname, '..', '..', 'static', 'route_helpers.js'));
 
 test('stopLabel: Start / End / numbered interior stops', () => {
@@ -155,4 +156,26 @@ test('describeLiveTick: reports a reroute honestly, including the incident leg a
   assert.doesNotMatch(unchanged.message, /Simulated incident/);
   assert.match(unchanged.message, /still best/);
   assert.match(unchanged.message, /0\.0 min/);
+});
+
+test('fleetOrderChanged: true when no previous snapshot exists yet', () => {
+  assert.equal(fleetOrderChanged(null, [{ vehicle: 0, order: [0, 1, 2, 0] }]), true);
+});
+
+test('fleetOrderChanged: false when every vehicle kept its exact stop order', () => {
+  const prev = [{ vehicle: 0, order: [0, 1, 2, 0] }, { vehicle: 1, order: [0, 3, 0] }];
+  const next = [{ vehicle: 0, order: [0, 1, 2, 0] }, { vehicle: 1, order: [0, 3, 0] }];
+  assert.equal(fleetOrderChanged(prev, next), false);
+});
+
+test('fleetOrderChanged: true when just one of several vehicles changed its order', () => {
+  const prev = [{ vehicle: 0, order: [0, 1, 2, 0] }, { vehicle: 1, order: [0, 3, 0] }];
+  const next = [{ vehicle: 0, order: [0, 2, 1, 0] }, { vehicle: 1, order: [0, 3, 0] }];
+  assert.equal(fleetOrderChanged(prev, next), true);
+});
+
+test('fleetOrderChanged: true when the number of vehicles used changed', () => {
+  const prev = [{ vehicle: 0, order: [0, 1, 2, 3, 0] }];
+  const next = [{ vehicle: 0, order: [0, 1, 2, 0] }, { vehicle: 1, order: [0, 3, 0] }];
+  assert.equal(fleetOrderChanged(prev, next), true);
 });

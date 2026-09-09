@@ -358,6 +358,20 @@
     cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease;
   }
   #stats .export-btn:hover { background: var(--surface-muted-hover); border-color: var(--surface-muted-hover-border); color: var(--ink); }
+  #stats .explain-block { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-soft); }
+  #stats .explain-toggle {
+    background: none; border: none; padding: 0; font-family: inherit; font-size: 11.5px; font-weight: 700;
+    color: var(--ink-soft); cursor: pointer; display: flex; align-items: center; gap: 4px;
+  }
+  #stats .explain-toggle:hover { color: var(--ink); }
+  #stats .explain-toggle .chev { transition: transform 0.15s ease; font-size: 10px; }
+  #stats .explain-toggle[aria-expanded="true"] .chev { transform: rotate(180deg); }
+  #stats .explain-body { margin-top: 8px; font-size: 11.5px; color: var(--ink-soft); line-height: 1.6; }
+  #stats .explain-row { padding: 2px 0; }
+  #stats .explain-row.violated { color: var(--danger); font-weight: 600; }
+  #stats .explain-row .check { display: inline-block; width: 14px; }
+  #stats .fuel-row { display: flex; justify-content: space-between; align-items: baseline; padding: 3px 0; color: var(--ink-soft); }
+  #stats .fuel-row b { color: var(--ink); font-weight: 700; }
 
   /* Printable itinerary — hidden on screen entirely, and the ONLY thing
      visible when window.print() is triggered by the "Print / PDF" export
@@ -486,6 +500,80 @@
   }
   #precedenceList li button:hover { color: var(--danger); }
   #precedenceStatus { font-size: 12px; color: var(--ink-soft); }
+
+  /* ---------- Time-window rules panel ---------- */
+  #timeWindowsPanel {
+    position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+    width: 420px; max-width: calc(100% - 40px); max-height: calc(100% - 90px);
+    z-index: 800; display: none; flex-direction: column; overflow: hidden;
+    background: var(--panel-bg); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--panel-border); box-shadow: var(--shadow); border-radius: var(--radius);
+  }
+  #timeWindowsPanel-header {
+    flex: 0 0 auto; padding: 12px 16px; font-size: 13px; font-weight: 700; color: var(--ink);
+    border-bottom: 1px solid var(--border-soft);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  #timeWindowsPanel-header button {
+    background: none; border: none; color: var(--muted); font-size: 17px; cursor: pointer;
+    padding: 0 4px; line-height: 1; border-radius: 6px;
+  }
+  #timeWindowsPanel-header button:hover { color: var(--danger); }
+  #timeWindowsPanel-body { padding: 14px 16px 16px; overflow-y: auto; }
+  #timeWindowsForm { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  #timeWindowsForm select {
+    flex: 1 1 auto; min-width: 90px; font-family: inherit; font-size: 12.5px; padding: 7px 8px;
+    border: 1px solid var(--border-medium); border-radius: 8px; background: var(--surface-solid); color: var(--ink);
+  }
+  #timeWindowsForm input[type="number"] {
+    width: 78px; font-family: inherit; font-size: 12.5px; padding: 7px 8px;
+    border: 1px solid var(--border-medium); border-radius: 8px; background: var(--surface-solid); color: var(--ink);
+  }
+  #timeWindowsForm span { font-size: 12px; color: var(--ink-soft); }
+  #timeWindowsForm button {
+    font-family: inherit; font-size: 12px; font-weight: 700; color: white; cursor: pointer;
+    background: linear-gradient(120deg, var(--accent-1), var(--accent-2)); border: none;
+    border-radius: 8px; padding: 7px 12px;
+  }
+  #timeWindowsList { list-style: none; margin: 0 0 8px; padding: 0; }
+  #timeWindowsList li {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 7px 10px; font-size: 12.5px; color: var(--ink); background: var(--surface-muted);
+    border-radius: 8px; margin-bottom: 6px;
+  }
+  #timeWindowsList li button {
+    background: none; border: none; color: var(--muted); font-size: 15px; cursor: pointer; line-height: 1; padding: 0 2px;
+  }
+  #timeWindowsList li button:hover { color: var(--danger); }
+  #timeWindowsStatus { font-size: 12px; color: var(--ink-soft); }
+
+  /* ---------- Method comparison panel ---------- */
+  #comparePanel {
+    position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+    width: 460px; max-width: calc(100% - 40px); max-height: calc(100% - 90px);
+    z-index: 800; display: none; flex-direction: column; overflow: hidden;
+    background: var(--panel-bg); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--panel-border); box-shadow: var(--shadow); border-radius: var(--radius);
+  }
+  #comparePanel-header {
+    flex: 0 0 auto; padding: 12px 16px; font-size: 13px; font-weight: 700; color: var(--ink);
+    border-bottom: 1px solid var(--border-soft);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  #comparePanel-header button {
+    background: none; border: none; color: var(--muted); font-size: 17px; cursor: pointer;
+    padding: 0 4px; line-height: 1; border-radius: 6px;
+  }
+  #comparePanel-header button:hover { color: var(--danger); }
+  #comparePanel-body { padding: 14px 16px 16px; overflow-y: auto; }
+  .compare-row {
+    display: grid; grid-template-columns: 1.3fr 1fr 1fr; align-items: baseline; gap: 8px;
+    padding: 5px 0; font-size: 12.5px; color: var(--ink-soft);
+  }
+  .compare-row b { color: var(--ink); font-weight: 700; }
+  .compare-row.compare-header { font-weight: 700; color: var(--ink); border-bottom: 1px solid var(--border-soft); padding-bottom: 8px; margin-bottom: 4px; }
+  .compare-row .swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; margin-right: 5px; }
+  #compareContent .footnote { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-soft); font-size: 10.5px; color: var(--muted); line-height: 1.5; }
 
   /* ---------- Per-stop weights panel ---------- */
   #weightsPanel {
@@ -626,9 +714,10 @@
   <div class="method-wrap">
     <select id="methodSelect">
       <option value="quantum">Quantum-inspired (QUBO + SA)</option>
+      <option value="qpu">Real QPU (D-Wave annealer)</option>
       <option value="classical">Classical (nearest-neighbor + 2-opt)</option>
     </select>
-    <i class="info-icon" title="Quantum-inspired = simulated annealing on a QUBO formulation, run on ordinary classical hardware as a fast stand-in for a real quantum annealer — not run on real quantum hardware. Classical = a standard nearest-neighbor + 2-opt baseline for comparison.">i</i>
+    <i class="info-icon" title="Quantum-inspired = simulated annealing on a QUBO formulation, run on ordinary classical hardware as a fast stand-in for a real quantum annealer. Real QPU = the same QUBO submitted to an actual D-Wave quantum annealer over the cloud — needs dwave-system installed and a configured D-Wave API token on the server; if that isn't set up here, this option will return a clear error rather than silently falling back. Classical = a standard nearest-neighbor + 2-opt baseline for comparison.">i</i>
   </div>
   <div class="method-wrap">
     <select id="vehicleSelect">
@@ -667,10 +756,12 @@
     <div id="suggestions"></div>
   </div>
   <button id="solveBtn" class="primary" disabled>Solve route</button>
-  <button id="liveReoptBtn" type="button" class="ghost" disabled title="Simulate traffic changing over time and watch the optimizer continuously re-check/re-route — a repeated, automated version of &quot;Simulate incident&quot;, not a real live GPS feed. Single-vehicle routes only.">&#9654; Live re-optimize</button>
+  <button id="liveReoptBtn" type="button" class="ghost" disabled title="Simulate traffic changing over time and watch the optimizer continuously re-check/re-route — a repeated, automated version of &quot;Simulate incident&quot;, not a real live GPS feed. Works for both a single route and a fleet plan (each vehicle re-routes independently).">&#9654; Live re-optimize</button>
   <button id="importBtn" type="button" class="ghost">Import stops</button>
   <button id="shareBtn" type="button" class="ghost" disabled>Share</button>
   <button id="precedenceBtn" type="button" class="ghost">Precedence</button>
+  <button id="timeWindowsBtn" type="button" class="ghost">Time windows</button>
+  <button id="compareBtn" type="button" class="ghost" disabled title="Solve your current stops with BOTH Quantum-inspired and Classical and compare them side by side on the map — a real measurement, not a claim.">Compare methods</button>
   <button id="clearBtn" class="danger">Clear points</button>
 </div>
 <div id="content">
@@ -716,6 +807,36 @@
       </div>
       <ul id="precedenceList"></ul>
       <div id="precedenceStatus"></div>
+    </div>
+  </div>
+  <div id="timeWindowsPanel">
+    <div id="timeWindowsPanel-header">
+      <span>Time windows</span>
+      <button id="timeWindowsClose" title="Close">&times;</button>
+    </div>
+    <div id="timeWindowsPanel-body">
+      <p class="import-help">Require a stop to be reached within an earliest/latest arrival window, in minutes from your Start point. This is pruned into the solve itself, then checked against the real solved schedule — see the README. Single-vehicle mode only, and only for method = Quantum-inspired or Real QPU (classical 2-opt has no notion of a position constraint) and only while the route has {{ cluster_size }} interior stops or fewer (past that it's solved as multiple independent clusters, and a window tied to the full route's order can't be enforced within one cluster's own local positions). Rules automatically follow your stops as the route is (re-)solved, but are cleared if you add or remove a stop, since positions shift.</p>
+      <div id="timeWindowsForm">
+        <select id="twStopSelect"></select>
+        <span>between</span>
+        <input id="twEarliestInput" type="number" min="0" step="1" placeholder="earliest">
+        <span>&ndash;</span>
+        <input id="twLatestInput" type="number" min="0" step="1" placeholder="latest">
+        <span>min</span>
+        <button id="twAddBtn" type="button">Add</button>
+      </div>
+      <ul id="timeWindowsList"></ul>
+      <div id="timeWindowsStatus"></div>
+    </div>
+  </div>
+  <div id="comparePanel">
+    <div id="comparePanel-header">
+      <span>Method comparison</span>
+      <button id="compareClose" title="Close">&times;</button>
+    </div>
+    <div id="comparePanel-body">
+      <p class="import-help">Solves your current stops with BOTH methods and shows the real difference on THIS instance — not a general claim either method always wins (see the README's benchmark experiments for aggregate comparisons across many random instances). Time-window rules, if any, aren't supported under Classical, so they're applied to the Quantum-inspired side only.</p>
+      <div id="compareContent"></div>
     </div>
   </div>
   <div id="importPanel">
@@ -810,6 +931,7 @@ function _syncBasemap() {
 let clickedPoints = [];   // [[lat, lon], ...]
 let pointMarkers = [];    // Leaflet markers for clicked points
 let routeLayer = null;    // current drawn route (polyline + numbered stops)
+let compareRouteLayer = null; // both routes drawn by the "Compare methods" panel, kept separate from routeLayer
 
 function isFleetMode() {
   return parseInt(document.getElementById('vehicleSelect').value, 10) > 1;
@@ -840,6 +962,7 @@ function redrawPins() {
   });
   document.getElementById('solveBtn').disabled = clickedPoints.length < 2;
   document.getElementById('shareBtn').disabled = clickedPoints.length < 2;
+  document.getElementById('compareBtn').disabled = clickedPoints.length < 2 || isFleetMode();
 }
 
 function animateIn(el) {
@@ -872,11 +995,18 @@ function invalidateRoute(noticeMsg) {
   document.getElementById('liveFeed').style.display = 'none';
   _setLiveReoptButtonEnabled(false);
   lastSolveContext = null;
+  lastFleetSolveContext = null;
+  // A previously-drawn method comparison is tied to the OLD stops/matrix —
+  // clear its map layer and numbers rather than leave a stale comparison
+  // on screen once the points it was computed from have changed.
+  if (compareRouteLayer) { map.removeLayer(compareRouteLayer); compareRouteLayer = null; }
+  document.getElementById('compareContent').innerHTML = '';
   if (noticeMsg) showNotice(noticeMsg);
 }
 
 function removePoint(i) {
   _removePrecedenceForRemovedIndex(i);
+  _removeTimeWindowForRemovedIndex(i);
   _removeWeightForRemovedIndex(i);
   clickedPoints.splice(i, 1);
   redrawPins();
@@ -900,6 +1030,7 @@ map.on('click', (e) => addPoint(e.latlng.lat, e.latlng.lng));
 document.getElementById('clearBtn').addEventListener('click', () => {
   clickedPoints = [];
   _clearPrecedenceRules();
+  _clearTimeWindows();
   _clearStopWeights();
   redrawPins();
   invalidateRoute(null);
@@ -914,6 +1045,10 @@ document.getElementById('vehicleSelect').addEventListener('change', () => {
   // referring to a mode where they're silently never sent to the server.
   document.getElementById('precedenceBtn').style.display = isFleetMode() ? 'none' : '';
   if (isFleetMode()) _clearPrecedenceRules();
+  // Time windows are single-vehicle-mode only too — /api/solve_fleet
+  // doesn't accept them (see app.py's solve_fleet docstring).
+  document.getElementById('timeWindowsBtn').style.display = isFleetMode() ? 'none' : '';
+  if (isFleetMode()) _clearTimeWindows();
   // Per-stop weights are fleet-mode only, symmetrically.
   if (!isFleetMode()) _clearStopWeights();
   redrawPins(); // relabels the first pin as Depot ("D") vs Start ("S")
@@ -1005,6 +1140,8 @@ function _renderPrecedenceList() {
 
 document.getElementById('precedenceBtn').addEventListener('click', () => {
   document.getElementById('importPanel').style.display = 'none'; // only one floating panel open at a time
+  document.getElementById('timeWindowsPanel').style.display = 'none';
+  document.getElementById('comparePanel').style.display = 'none';
   const panel = document.getElementById('precedencePanel');
   panel.style.display = 'flex';
   animateIn(panel);
@@ -1060,6 +1197,197 @@ function _remapPrecedenceAfterSolve(order) {
   _renderPrecedenceList();
 }
 
+// ---------- Time-window rules (single-vehicle mode) ----------
+// Frontend authoring UI for the time_windows request field /api/solve has
+// accepted since it was wired into the live app — see app.py's
+// _validate_time_windows and src/time_windows.py for the real contract:
+// each window is pruned into a provably-SAFE (not provably-sufficient)
+// tour-position range before solving, then the ACTUAL solved schedule is
+// checked against it afterwards (rendered by _timeWindowChecksHtml in the
+// stats panel). Same keyed-by-CURRENT-index shape and lifecycle as
+// precedenceRules above: cleared on switch to fleet mode (not supported
+// server-side for /api/solve_fleet), shifted down on point removal, and
+// remapped to new positions after every (re-)solve.
+
+let timeWindows = {}; // { [currentIndex]: [earliestMinutes, latestMinutes] }
+
+function _refreshTimeWindowsForm() {
+  const interior = _interiorStopIndices();
+  const sel = document.getElementById('twStopSelect');
+  sel.innerHTML = interior.map(i => `<option value="${i}">Stop ${i}</option>`).join('');
+  const form = document.getElementById('timeWindowsForm');
+  const statusEl = document.getElementById('timeWindowsStatus');
+  if (!interior.length) {
+    form.style.display = 'none';
+    statusEl.textContent = 'Add at least 1 stop between your Start and End points first.';
+  } else {
+    form.style.display = 'flex';
+    statusEl.textContent = '';
+  }
+}
+
+function _renderTimeWindowsList() {
+  document.getElementById('timeWindowsList').innerHTML = Object.keys(timeWindows).map(k => {
+    const [earliest, latest] = timeWindows[k];
+    return `<li><span>Stop ${k}: ${earliest}&ndash;${latest} min</span><button data-i="${k}" type="button" title="Remove this rule">&times;</button></li>`;
+  }).join('');
+}
+
+document.getElementById('timeWindowsBtn').addEventListener('click', () => {
+  document.getElementById('importPanel').style.display = 'none'; // only one floating panel open at a time
+  document.getElementById('precedencePanel').style.display = 'none';
+  document.getElementById('comparePanel').style.display = 'none';
+  const panel = document.getElementById('timeWindowsPanel');
+  panel.style.display = 'flex';
+  animateIn(panel);
+  _refreshTimeWindowsForm();
+  _renderTimeWindowsList();
+});
+
+document.getElementById('timeWindowsClose').addEventListener('click', () => {
+  document.getElementById('timeWindowsPanel').style.display = 'none';
+});
+
+document.getElementById('twAddBtn').addEventListener('click', () => {
+  const idx = parseInt(document.getElementById('twStopSelect').value, 10);
+  const earliestRaw = document.getElementById('twEarliestInput').value;
+  const latestRaw = document.getElementById('twLatestInput').value;
+  const statusEl = document.getElementById('timeWindowsStatus');
+  if (earliestRaw === '' || latestRaw === '') { statusEl.textContent = 'Enter both an earliest and a latest minute.'; return; }
+  const earliest = parseFloat(earliestRaw);
+  const latest = parseFloat(latestRaw);
+  if (!(earliest >= 0) || !(latest >= 0)) { statusEl.textContent = 'Both values must be non-negative.'; return; }
+  if (earliest > latest) { statusEl.textContent = 'Earliest must be <= latest.'; return; }
+  timeWindows[idx] = [earliest, latest];
+  statusEl.textContent = '';
+  document.getElementById('twEarliestInput').value = '';
+  document.getElementById('twLatestInput').value = '';
+  _renderTimeWindowsList();
+});
+
+document.getElementById('timeWindowsList').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  delete timeWindows[btn.dataset.i];
+  _renderTimeWindowsList();
+});
+
+function _clearTimeWindows() {
+  timeWindows = {};
+  _renderTimeWindowsList();
+}
+
+function _removeTimeWindowForRemovedIndex(i) {
+  const next = {};
+  for (const k of Object.keys(timeWindows)) {
+    const idx = parseInt(k, 10);
+    if (idx === i) continue; // the removed stop no longer makes sense as a rule
+    next[idx > i ? idx - 1 : idx] = timeWindows[k]; // everything after it shifts down by one
+  }
+  timeWindows = next;
+  _renderTimeWindowsList();
+}
+
+function _remapTimeWindowsAfterSolve(order) {
+  // Same remap `_remapPrecedenceAfterSolve` does, for an object keyed by
+  // index instead of a list of pairs: order[newPosition] = oldIndex.
+  const next = {};
+  for (const k of Object.keys(timeWindows)) {
+    const newPos = order.indexOf(parseInt(k, 10));
+    if (newPos !== -1) next[newPos] = timeWindows[k];
+  }
+  timeWindows = next;
+  _renderTimeWindowsList();
+}
+
+// ---------- Method comparison (single-vehicle mode) ----------
+// Solves the CURRENT stops with both Quantum-inspired and Classical in
+// parallel and shows the real difference side by side — a measurement,
+// not a claim, on exactly one instance (see src/benchmark.py for the
+// aggregate-across-many-random-instances comparisons this project's
+// research already ran). Deliberately self-contained: unlike
+// solveSingleVehicle(), it does NOT touch clickedPoints, lastSolveContext,
+// or the main routeLayer/directions/live-reopt state — it draws into its
+// own compareRouteLayer and its own panel, so running a comparison can
+// never interfere with (or be confused for) the "current" solved route.
+
+async function compareMethods() {
+  if (clickedPoints.length < 2 || isFleetMode()) return;
+  document.getElementById('importPanel').style.display = 'none';
+  document.getElementById('precedencePanel').style.display = 'none';
+  document.getElementById('timeWindowsPanel').style.display = 'none';
+  const panel = document.getElementById('comparePanel');
+  panel.style.display = 'flex';
+  animateIn(panel);
+  const contentEl = document.getElementById('compareContent');
+  contentEl.innerHTML = '<p class="import-help">Solving with both methods…</p>';
+
+  try {
+    const hourRaw = document.getElementById('hourSelect').value;
+    const hour = hourRaw === 'now' ? (new Date().getHours() + new Date().getMinutes() / 60) : parseFloat(hourRaw);
+    const durations = await osrmTable(clickedPoints);
+    const hasTimeWindows = Object.keys(timeWindows).length > 0;
+
+    // Classical has no notion of a position constraint (see app.py's
+    // _validate_time_windows / README's "Time-window constraints") — a 400
+    // there would kill the whole comparison, so time windows are only sent
+    // on the quantum-inspired side, and the footnote below says so.
+    const bodyFor = (method) => JSON.stringify({
+      matrix: durations, method, hour, precedence: precedenceRules,
+      time_windows: method === 'classical' ? {} : timeWindows,
+      points: clickedPoints,
+    });
+    const [quantumResp, classicalResp] = await Promise.all([
+      fetch('/api/solve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: bodyFor('quantum') }),
+      fetch('/api/solve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: bodyFor('classical') }),
+    ]);
+    const [quantumData, classicalData] = await Promise.all([quantumResp.json(), classicalResp.json()]);
+    if (!quantumResp.ok || !classicalResp.ok) {
+      const errMsg = (!quantumResp.ok && quantumData.error) || (!classicalResp.ok && classicalData.error) || 'a solve failed.';
+      contentEl.innerHTML = `<p class="import-help">Comparison failed: ${escapeHtml(errMsg)}</p>`;
+      return;
+    }
+
+    if (compareRouteLayer) map.removeLayer(compareRouteLayer);
+    compareRouteLayer = L.layerGroup().addTo(map);
+    const [quantumRoute, classicalRoute] = await Promise.all([
+      osrmRoute(quantumData.order.map(i => clickedPoints[i])),
+      osrmRoute(classicalData.order.map(i => clickedPoints[i])),
+    ]);
+    animateRoute(quantumRoute.latlngs, compareRouteLayer, '#6366f1');
+    animateRoute(classicalRoute.latlngs, compareRouteLayer, '#64748b'); // slate — distinct from every other route color already in use
+
+    const delta = quantumData.cost_minutes - classicalData.cost_minutes;
+    const winner = Math.abs(delta) < 0.05 ? null : (delta < 0 ? 'Quantum-inspired' : 'Classical');
+    const winnerNote = winner
+      ? `${winner} found the faster route here by ${Math.abs(delta).toFixed(1)} min.`
+      : 'Both methods found the same total drive time on this instance.';
+    const twNote = hasTimeWindows
+      ? ' Time-window rules were applied to the quantum-inspired side only — classical has no notion of a position constraint.'
+      : '';
+
+    contentEl.innerHTML = `
+      <div class="compare-row compare-header">
+        <span></span>
+        <span><span class="swatch" style="background:#6366f1"></span>Quantum</span>
+        <span><span class="swatch" style="background:#64748b"></span>Classical</span>
+      </div>
+      <div class="compare-row"><span>Drive time</span><b>${quantumData.cost_minutes} min</b><b>${classicalData.cost_minutes} min</b></div>
+      <div class="compare-row"><span>Free-flow baseline</span><span>${quantumData.free_flow_minutes} min</span><span>${classicalData.free_flow_minutes} min</span></div>
+      <div class="compare-row"><span>Savings vs click order</span><span>${quantumData.savings_vs_naive_pct}%</span><span>${classicalData.savings_vs_naive_pct}%</span></div>
+      <div class="compare-row"><span>Solve time</span><span>${quantumData.solve_ms} ms</span><span>${classicalData.solve_ms} ms</span></div>
+      <div class="footnote">${winnerNote} This is one instance, not a general guarantee either method always wins — see the README's benchmark experiments for aggregate comparisons across many random instances.${twNote}</div>
+    `;
+  } catch (err) {
+    document.getElementById('compareContent').innerHTML = `<p class="import-help">Comparison failed: ${escapeHtml(err.message || 'a request failed.')}</p>`;
+  }
+}
+
+document.getElementById('compareBtn').addEventListener('click', compareMethods);
+document.getElementById('compareClose').addEventListener('click', () => {
+  document.getElementById('comparePanel').style.display = 'none';
+});
+
 // ---------- Per-stop demand weights (fleet mode, "Max load/vehicle") ----------
 // Lets a "Max load/vehicle" cap mean total delivery weight/volume instead
 // of a plain stop count — see src/clustering.py's solve_multi_vehicle
@@ -1089,6 +1417,8 @@ document.getElementById('capacityModeSelect').addEventListener('change', () => {
 document.getElementById('weightsBtn').addEventListener('click', () => {
   document.getElementById('importPanel').style.display = 'none';
   document.getElementById('precedencePanel').style.display = 'none';
+  document.getElementById('timeWindowsPanel').style.display = 'none';
+  document.getElementById('comparePanel').style.display = 'none';
   const panel = document.getElementById('weightsPanel');
   panel.style.display = 'flex';
   animateIn(panel);
@@ -1266,6 +1596,8 @@ const importSubmitBtn = document.getElementById('importSubmit');
 
 importBtn.addEventListener('click', () => {
   document.getElementById('precedencePanel').style.display = 'none'; // only one floating panel open at a time
+  document.getElementById('timeWindowsPanel').style.display = 'none';
+  document.getElementById('comparePanel').style.display = 'none';
   importPanel.style.display = 'flex';
   animateIn(importPanel);
   importTextarea.focus();
@@ -1584,6 +1916,7 @@ document.getElementById('directionsClose').addEventListener('click', () => {
 // apply_incident_spikes and app.py's incident_pairs handling.
 
 let lastSolveContext = null; // { hour, method } from the most recent successful single-vehicle solve
+let lastFleetSolveContext = null; // { hour, method, nVehicles, maxStopsPerVehicle, demands, vehicleCapacity, cost_minutes, vehicleOrders } from the most recent successful fleet solve
 let lastRouteExport = null; // { points, latlngs, legs, cost_minutes, free_flow_minutes, method, hour } — feeds GPX/print export
 
 document.getElementById('directions-list').addEventListener('click', (e) => {
@@ -1609,6 +1942,7 @@ async function simulateIncident(legIdx) {
         hour: lastSolveContext.hour,
         incident_pairs: [[legIdx, legIdx + 1]],
         precedence: precedenceRules,
+        time_windows: timeWindows,
       }),
     });
     const solveData = await solveResp.json();
@@ -1624,6 +1958,7 @@ async function simulateIncident(legIdx) {
       .then(() => animateTravelingMarker(routeInfo.latlngs, routeLayer, 1800));
 
     _remapPrecedenceAfterSolve(solveData.order);
+    _remapTimeWindowsAfterSolve(solveData.order);
     clickedPoints = orderedPoints;
     redrawPins();
     renderDirections(routeInfo.legs, orderedPoints);
@@ -1642,6 +1977,8 @@ async function simulateIncident(legIdx) {
         ? 'The optimizer found a different visiting order to route around the closure.'
         : 'No alternate stop order was available — that leg is unavoidable given the fixed Start/End points.'}
         Incident: a simulated 4&times; slowdown on one leg, for demo purposes — not a real closure feed.</div>
+      ${_fuelCo2Html(routeInfo.distance_km)}
+      ${_explanationHtml(solveData.explanation, pos => stopLabel(pos, orderedPoints.length))}
       ${_exportButtonsHtml()}
     `;
     animateIn(statsEl);
@@ -1675,10 +2012,16 @@ async function simulateIncident(legIdx) {
 // "Simulate incident" buttons use — nothing about this is a separate,
 // unverified code path.
 //
-// Deliberately single-vehicle only (like the incident/export features
-// above) — fleet mode's per-vehicle precedence/capacity state makes an
-// automated loop meaningfully more complex to do honestly, so this first
-// cut doesn't claim to cover it.
+// Works in both single-vehicle and fleet mode: it re-solves against
+// whichever endpoint (/api/solve or /api/solve_fleet) and configuration
+// (n_vehicles, capacity cap, demands) produced the route that's currently
+// on screen, so the same continuous-re-optimization behavior applies to
+// "Vehicle 1, 2, 3, ..." exactly as it does to a single vehicle — same
+// simulated clock, same incident injection, same honest "SIMULATED, not a
+// live GPS feed" framing. One real difference: fleet mode doesn't (yet)
+// send precedence rules to /api/solve_fleet even on a manual solve (see
+// solveFleet() above), so this loop doesn't invent that for the fleet case
+// either — it only re-solves whatever solveFleet() itself already sends.
 
 const LIVE_REOPT_INTERVAL_MS = 4000;
 const LIVE_REOPT_HOUR_STEP = 0.25; // each tick simulates 15 minutes passing
@@ -1693,11 +2036,16 @@ function isLiveReoptRunning() { return liveReoptTimer !== null; }
 
 function _setLiveReoptButtonEnabled(enabled) {
   const btn = document.getElementById('liveReoptBtn');
-  btn.disabled = !enabled || isFleetMode();
+  btn.disabled = !enabled;
+}
+
+function _currentLiveReoptContext() {
+  return isFleetMode() ? lastFleetSolveContext : lastSolveContext;
 }
 
 function startLiveReopt() {
-  if (!lastSolveContext || isFleetMode() || isLiveReoptRunning()) return;
+  const ctx = _currentLiveReoptContext();
+  if (!ctx || isLiveReoptRunning()) return;
   liveReoptTickCount = 0;
   const btn = document.getElementById('liveReoptBtn');
   btn.textContent = '⏸ Stop live mode';
@@ -1705,7 +2053,7 @@ function startLiveReopt() {
   document.getElementById('solveBtn').disabled = true;
   document.getElementById('liveFeed-list').innerHTML = '';
   document.getElementById('liveFeed').style.display = 'flex';
-  _appendLiveFeedLine(`${formatHour(lastSolveContext.hour)} — live re-optimization started (simulated traffic, not a live feed).`, false);
+  _appendLiveFeedLine(`${formatHour(ctx.hour)} — live re-optimization started (simulated traffic, not a live feed).`, false);
   liveReoptTimer = setInterval(liveReoptTick, LIVE_REOPT_INTERVAL_MS);
   liveReoptTick(); // fire the first tick immediately rather than waiting a full interval
 }
@@ -1729,7 +2077,17 @@ function _appendLiveFeedLine(message, rerouted) {
 }
 
 async function liveReoptTick() {
-  if (liveReoptTickInFlight || !lastSolveContext) return;
+  if (liveReoptTickInFlight) return;
+  if (isFleetMode()) {
+    if (!lastFleetSolveContext) return;
+    await _liveReoptTickFleet();
+  } else {
+    if (!lastSolveContext) return;
+    await _liveReoptTickSingle();
+  }
+}
+
+async function _liveReoptTickSingle() {
   liveReoptTickInFlight = true;
   try {
     liveReoptTickCount += 1;
@@ -1754,6 +2112,7 @@ async function liveReoptTick() {
         hour: newHour,
         incident_pairs: incidentLeg ? [incidentLeg] : [],
         precedence: precedenceRules,
+        time_windows: timeWindows,
         points: clickedPoints,
       }),
     });
@@ -1778,6 +2137,7 @@ async function liveReoptTick() {
       animateRoute(routeInfo.latlngs, routeLayer, '#f97316')
         .then(() => animateTravelingMarker(routeInfo.latlngs, routeLayer, 1600));
       _remapPrecedenceAfterSolve(solveData.order);
+    _remapTimeWindowsAfterSolve(solveData.order);
       clickedPoints = orderedPoints;
       redrawPins();
       renderDirections(routeInfo.legs, orderedPoints);
@@ -1804,6 +2164,86 @@ async function liveReoptTick() {
   }
 }
 
+// Fleet analogue of _liveReoptTickSingle — same simulated clock, same
+// random-incident injection, same "re-solve against the exact endpoint a
+// manual solve would use" honesty, but against /api/solve_fleet and
+// redrawing every vehicle's own route (each vehicle's own color, same as
+// solveFleet() uses) rather than a single polyline. This is the direct
+// answer to "this shall happen exactly the same for multiple vehicles
+// also — directions for vehicle 1, 2, 3 all."
+async function _liveReoptTickFleet() {
+  liveReoptTickInFlight = true;
+  try {
+    liveReoptTickCount += 1;
+    if (liveReoptTickCount > LIVE_REOPT_MAX_TICKS) {
+      stopLiveReopt(`Live demo auto-stopped after ${LIVE_REOPT_MAX_TICKS} cycles — click Live re-optimize to run it again.`);
+      return;
+    }
+
+    const ctx = lastFleetSolveContext;
+    const newHour = advanceSimulatedHour(ctx.hour, LIVE_REOPT_HOUR_STEP);
+    let incidentLeg = null;
+    if (shouldTriggerIncident(Math.random(), LIVE_REOPT_INCIDENT_PROBABILITY)) {
+      incidentLeg = pickIncidentLeg(clickedPoints.length, Math.random());
+    }
+
+    const durations = await osrmTable(clickedPoints); // clickedPoints is already depot + stops in the layout the fleet was last split from
+    const solveResp = await fetch('/api/solve_fleet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        matrix: durations, method: ctx.method, hour: newHour, n_vehicles: ctx.nVehicles, depot_index: 0,
+        max_stops_per_vehicle: ctx.maxStopsPerVehicle, demands: ctx.demands, vehicle_capacity: ctx.vehicleCapacity,
+        incident_pairs: incidentLeg ? [incidentLeg] : [],
+        points: clickedPoints,
+      }),
+    });
+    const solveData = await solveResp.json();
+    if (!solveResp.ok) {
+      stopLiveReopt(`Live demo stopped — ${solveData.error || 'a re-solve failed.'}`);
+      return;
+    }
+
+    const previousCost = ctx.cost_minutes;
+    const orderChanged = fleetOrderChanged(ctx.vehicleOrders, solveData.vehicles);
+    const { message, rerouted } = describeLiveTick({
+      hour: newHour, previousCost, newCost: solveData.total_cost_minutes, orderChanged, incidentLeg,
+    });
+    _appendLiveFeedLine(message, rerouted);
+
+    if (rerouted) {
+      if (routeLayer) map.removeLayer(routeLayer);
+      routeLayer = L.layerGroup().addTo(map);
+      for (const v of solveData.vehicles) {
+        const color = VEHICLE_COLORS[v.vehicle % VEHICLE_COLORS.length];
+        const pts = v.order.map(i => clickedPoints[i]);
+        try {
+          const routeInfo = await osrmRoute(pts);
+          animateRoute(routeInfo.latlngs, routeLayer, color)
+            .then(() => animateTravelingMarker(routeInfo.latlngs, routeLayer, 1600));
+        } catch (e) { /* one vehicle's road geometry failing shouldn't block the others */ }
+      }
+    }
+
+    lastFleetSolveContext = {
+      ...ctx, hour: newHour, cost_minutes: solveData.total_cost_minutes,
+      vehicleOrders: solveData.vehicles.map(v => ({ vehicle: v.vehicle, order: v.order })),
+    };
+
+    const statsEl = document.getElementById('stats');
+    if (statsEl.style.display !== 'none') {
+      const heroTimeEl = statsEl.querySelector('.hero-time');
+      if (heroTimeEl) heroTimeEl.textContent = `${solveData.total_cost_minutes} min`;
+      const heroLabelEl = statsEl.querySelector('.hero-label');
+      if (heroLabelEl) heroLabelEl.textContent = `Total fleet drive time · ${formatHour(newHour)} traffic (live)`;
+    }
+  } catch (err) {
+    stopLiveReopt(`Live demo stopped — ${err.message || 'a request failed.'}`);
+  } finally {
+    liveReoptTickInFlight = false;
+  }
+}
+
 document.getElementById('liveReoptBtn').addEventListener('click', () => {
   if (isLiveReoptRunning()) stopLiveReopt('Live re-optimization stopped.');
   else startLiveReopt();
@@ -1812,6 +2252,96 @@ document.getElementById('liveFeedClose').addEventListener('click', () => {
   stopLiveReopt(null);
   document.getElementById('liveFeed').style.display = 'none';
 });
+
+// ---------- Route explanation panel ("Why this route?") ----------
+// Every /api/solve and /api/solve_fleet response already computes a
+// plain-language explanation server-side (src/explain.py) — bottleneck
+// leg, precedence checks, per-vehicle capacity margin — it just never
+// used to be shown anywhere. This turns it into a small collapsible
+// section in the stats panel. Pure presentation: no new numbers are
+// computed here, everything is read straight from the already-verified
+// `explanation` field the server returns.
+
+function _methodLabel(method) {
+  if (method === 'qpu') return 'real QPU (D-Wave)';
+  if (method === 'quantum') return 'quantum-inspired';
+  return 'classical 2-opt';
+}
+
+function _explanationHtml(explanation, labelFn, extraRowsHtml) {
+  if (!explanation || !explanation.legs || !explanation.legs.length) return '';
+  const legs = explanation.legs;
+  let bottleneckIdx = 0;
+  legs.forEach((leg, idx) => { if (leg.cost > legs[bottleneckIdx].cost) bottleneckIdx = idx; });
+  const bnLeg = legs[bottleneckIdx];
+
+  let precHtml = '';
+  if (explanation.precedence_checks && explanation.precedence_checks.length) {
+    precHtml = explanation.precedence_checks.map(chk => {
+      const label = `${escapeHtml(labelFn(chk.u_position))} before ${escapeHtml(labelFn(chk.v_position))}`;
+      return `<div class="explain-row ${chk.satisfied ? '' : 'violated'}"><span class="check">${chk.satisfied ? '✓' : '✗'}</span>${label}</div>`;
+    }).join('');
+  }
+
+  return `
+    <div class="explain-block">
+      <button class="explain-toggle" type="button" aria-expanded="false">Why this route? <span class="chev">&#9662;</span></button>
+      <div class="explain-body" hidden>
+        <div class="explain-row"><b>Longest leg:</b> ${escapeHtml(labelFn(bottleneckIdx))} &rarr; ${escapeHtml(labelFn(bottleneckIdx + 1))} &mdash; ${bnLeg.cost.toFixed(1)} min (${bnLeg.pct_of_total}% of total)</div>
+        ${precHtml}
+        ${extraRowsHtml || ''}
+      </div>
+    </div>
+  `;
+}
+
+function _timeWindowChecksHtml(checks) {
+  if (!checks || !checks.length) return '';
+  return checks.map(c => {
+    const label = `Time window (${c.window[0]}-${c.window[1]} min)`;
+    const detail = c.arrival_time == null
+      ? 'no arrival time computed'
+      : c.satisfied
+        ? `arrived at ${c.arrival_time.toFixed(1)} min &middot; ${c.slack_minutes.toFixed(1)} min to spare`
+        : `arrived at ${c.arrival_time.toFixed(1)} min &mdash; missed`;
+    return `<div class="explain-row ${c.satisfied ? '' : 'violated'}"><span class="check">${c.satisfied ? '✓' : '✗'}</span>${label}: ${detail}</div>`;
+  }).join('');
+}
+
+// Toggles any ".explain-toggle" button's sibling ".explain-body" — event
+// delegation on #stats (already used for the GPX/print export buttons)
+// so this keeps working across every full innerHTML replace on re-solve.
+document.getElementById('stats').addEventListener('click', (e) => {
+  const toggle = e.target.closest('.explain-toggle');
+  if (!toggle) return;
+  const body = toggle.nextElementSibling;
+  const expanded = toggle.getAttribute('aria-expanded') === 'true';
+  toggle.setAttribute('aria-expanded', String(!expanded));
+  body.hidden = expanded;
+});
+
+// ---------- Fuel / CO2 estimate ----------
+// A simple, clearly-labeled-as-an-ESTIMATE derived stat: real fuel use
+// depends on the actual vehicle, load, driving style, and road grade —
+// none of which this project models. AVG_FUEL_ECONOMY_KM_PER_L and
+// CO2_KG_PER_LITRE_PETROL are generic average-petrol-car figures (roughly
+// 13-15 km/l city driving; ~2.31 kg CO2 per litre of petrol combusted —
+// both widely-cited round-number estimates, not measured for any specific
+// vehicle), disclosed as such in the UI rather than presented as a precise
+// reading.
+const AVG_FUEL_ECONOMY_KM_PER_L = 13.0;
+const CO2_KG_PER_LITRE_PETROL = 2.31;
+
+function _fuelCo2Html(distanceKm) {
+  const litres = distanceKm / AVG_FUEL_ECONOMY_KM_PER_L;
+  const co2Kg = litres * CO2_KG_PER_LITRE_PETROL;
+  return `
+    <div class="fuel-row" title="Estimated only — assumes an average petrol car (~${AVG_FUEL_ECONOMY_KM_PER_L} km/l); real usage depends on your actual vehicle, load, and driving style.">
+      <span>Est. fuel &amp; CO&#8322;<i class="info-icon" style="margin-left:4px;">i</i></span>
+      <b>${litres.toFixed(1)} L &middot; ${co2Kg.toFixed(1)} kg CO&#8322;</b>
+    </div>
+  `;
+}
 
 // ---------- GPX + printable itinerary export (single-vehicle routes) ----------
 // Two dependency-free export paths, deliberately scoped to single-vehicle
@@ -1874,7 +2404,7 @@ function printItinerary() {
   `).join('');
   document.getElementById('printArea').innerHTML = `
     <h1>Route itinerary</h1>
-    <div class="print-summary">${points.length} stops &middot; ${cost_minutes} min estimated drive time (${formatHour(hour)} traffic, ${method === 'quantum' ? 'quantum-inspired' : 'classical'} solve) &middot; ${free_flow_minutes} min free-flow baseline</div>
+    <div class="print-summary">${points.length} stops &middot; ${cost_minutes} min estimated drive time (${formatHour(hour)} traffic, ${_methodLabel(method)} solve) &middot; ${free_flow_minutes} min free-flow baseline</div>
     <ol>${rows}</ol>
     <div class="print-footnote">Generated by the Quantum-Inspired Traffic Router. Traffic is a simulated time-of-day model, not a live feed.</div>
   `;
@@ -1924,7 +2454,9 @@ async function solveSingleVehicle() {
     const solveResp = await fetch('/api/solve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ matrix: durations, method, hour, precedence: precedenceRules, points: clickedPoints }),
+      body: JSON.stringify({
+        matrix: durations, method, hour, precedence: precedenceRules, time_windows: timeWindows, points: clickedPoints,
+      }),
     });
     const solveData = await solveResp.json();
     if (!solveResp.ok) { showError(solveData.error || 'Solve failed.'); return; }
@@ -1955,6 +2487,7 @@ async function solveSingleVehicle() {
       .then((line) => animateTravelingMarker(routeInfo.latlngs, routeLayer, 2000));
 
     _remapPrecedenceAfterSolve(solveData.order);
+    _remapTimeWindowsAfterSolve(solveData.order);
     clickedPoints = orderedPoints;
     redrawPins();
     renderDirections(routeInfo.legs, orderedPoints);
@@ -1968,7 +2501,7 @@ async function solveSingleVehicle() {
     const statsEl = document.getElementById('stats');
     statsEl.style.display = 'block';
     statsEl.innerHTML = `
-      <div class="stats-title"><span class="dot"></span>Route found &middot; ${method === 'quantum' ? 'quantum-inspired' : 'classical 2-opt'}</div>
+      <div class="stats-title"><span class="dot"></span>Route found &middot; ${_methodLabel(method)}</div>
       <div class="hero-label">Estimated drive time &middot; ${formatHour(hour)} traffic</div>
       <div class="hero-time">${solveData.cost_minutes} min</div>
       <div class="row"><span>Distance</span><b>${routeInfo.distance_km.toFixed(1)} km</b></div>
@@ -1976,6 +2509,8 @@ async function solveSingleVehicle() {
       <div class="savings-pill">${solveData.savings_vs_naive_pct}% faster than click order (${solveData.naive_order_minutes} min)</div>
       ${legendHtml}
       <div class="footnote">${clusterNote}Road data: real road network (OSRM). Traffic: simulated time-of-day model, not live sensors. Solve time: ${solveData.solve_ms} ms.</div>
+      ${_fuelCo2Html(routeInfo.distance_km)}
+      ${_explanationHtml(solveData.explanation, pos => stopLabel(pos, orderedPoints.length), _timeWindowChecksHtml(solveData.time_window_checks))}
       ${_exportButtonsHtml()}
     `;
     animateIn(statsEl);
@@ -2000,15 +2535,17 @@ async function solveSingleVehicle() {
 // case above: point 0 becomes a shared depot every vehicle starts and
 // returns to, and the remaining stops are split across N vehicles — see
 // src/clustering.py's solve_multi_vehicle for the honest scope of this
-// first cut. Deliberately simpler UI than the single-vehicle mode (no
-// turn-by-turn directions, no incident simulation, no naive-route overlay)
-// — this demonstrates the architecture generalizes past one vehicle, not a
-// full fleet-dispatch product.
+// first cut. Deliberately simpler UI than the single-vehicle mode for a
+// MANUAL solve (no turn-by-turn directions, no manual incident button, no
+// naive-route overlay) — this demonstrates the architecture generalizes
+// past one vehicle, not a full fleet-dispatch product. The continuous
+// "Live re-optimize" loop (defined above, near simulateIncident) DOES
+// support fleet mode, incidents included — see _liveReoptTickFleet.
 
 const VEHICLE_COLORS = ['#6366f1', '#f97316', '#10b981', '#e11d48', '#0ea5e9', '#a855f7'];
 
 async function solveFleet(nVehicles) {
-  if (isLiveReoptRunning()) stopLiveReopt(null); // live re-optimize demo is single-vehicle only
+  if (isLiveReoptRunning()) stopLiveReopt(null); // a fresh manual solve supersedes the running live demo
   const btn = document.getElementById('solveBtn');
   btn.disabled = true;
   btn.classList.add('loading');
@@ -2054,19 +2591,45 @@ async function solveFleet(nVehicles) {
     if (routeLayer) map.removeLayer(routeLayer);
     routeLayer = L.layerGroup().addTo(map);
 
+    let totalFuelL = 0, totalCo2Kg = 0;
     let vehicleRows = '';
     for (const v of solveData.vehicles) {
       const color = VEHICLE_COLORS[v.vehicle % VEHICLE_COLORS.length];
       const pts = v.order.map(i => clickedPoints[i]);
+      let vehicleDistanceKm = null;
       try {
         const routeInfo = await osrmRoute(pts);
         animateRoute(routeInfo.latlngs, routeLayer, color);
+        vehicleDistanceKm = routeInfo.distance_km;
       } catch (e) { /* one vehicle's road geometry failing shouldn't block the others */ }
       const demandLabel = v.demand != null ? `, load ${v.demand}` : '';
+
+      const vehExplanation = solveData.explanation && solveData.explanation.vehicles
+        ? solveData.explanation.vehicles.find(ve => ve.vehicle === v.vehicle) : null;
+      const depotOrStop = (pos) => (pos === 0 || pos === v.order.length - 1) ? 'Depot' : `Stop ${pos}`;
+      let extraForVehicle = '';
+      if (vehExplanation && vehExplanation.capacity_margin != null) {
+        extraForVehicle += `<div class="explain-row"><b>Capacity headroom:</b> ${vehExplanation.capacity_margin} left${vehExplanation.capacity_margin_pct != null ? ` (${vehExplanation.capacity_margin_pct}%)` : ''}</div>`;
+      }
+      let fuelForVehicle = '';
+      if (vehicleDistanceKm != null) {
+        const litres = vehicleDistanceKm / AVG_FUEL_ECONOMY_KM_PER_L;
+        const co2Kg = litres * CO2_KG_PER_LITRE_PETROL;
+        totalFuelL += litres;
+        totalCo2Kg += co2Kg;
+      }
+
       vehicleRows += `
         <div class="row"><span><span class="swatch solid" style="background:${color}"></span>Vehicle ${v.vehicle + 1} (${v.stops} stop${v.stops === 1 ? '' : 's'}${demandLabel})</span><b>${v.cost_minutes} min</b></div>
+        ${_explanationHtml(vehExplanation, depotOrStop, extraForVehicle)}
       `;
     }
+    const fleetFuelHtml = totalFuelL > 0 ? `
+      <div class="fuel-row" title="Estimated only — sum across all vehicles, each assumed to be an average petrol car (~${AVG_FUEL_ECONOMY_KM_PER_L} km/l); real usage depends on the actual vehicles, load, and driving style.">
+        <span>Est. total fuel &amp; CO&#8322;<i class="info-icon" style="margin-left:4px;">i</i></span>
+        <b>${totalFuelL.toFixed(1)} L &middot; ${totalCo2Kg.toFixed(1)} kg CO&#8322;</b>
+      </div>
+    ` : '';
 
     let capacityNote = '';
     if (maxStopsPerVehicle && solveData.n_vehicles_used > nVehicles) {
@@ -2077,13 +2640,20 @@ async function solveFleet(nVehicles) {
     const statsEl = document.getElementById('stats');
     statsEl.style.display = 'block';
     statsEl.innerHTML = `
-      <div class="stats-title"><span class="dot"></span>Fleet plan &middot; ${solveData.n_vehicles_used} vehicle${solveData.n_vehicles_used === 1 ? '' : 's'} &middot; ${method === 'quantum' ? 'quantum-inspired' : 'classical 2-opt'}</div>
+      <div class="stats-title"><span class="dot"></span>Fleet plan &middot; ${solveData.n_vehicles_used} vehicle${solveData.n_vehicles_used === 1 ? '' : 's'} &middot; ${_methodLabel(method)}</div>
       <div class="hero-label">Total fleet drive time &middot; ${formatHour(hour)} traffic</div>
       <div class="hero-time">${solveData.total_cost_minutes} min</div>
+      ${fleetFuelHtml}
       ${vehicleRows}
       <div class="footnote">${capacityNote}Each vehicle starts and returns to the Depot pin (your first point). Free-flow (no-traffic) total would be ${solveData.total_free_flow_minutes} min. This is a first step toward real multi-vehicle dispatch, not a full capacitated VRP solver — see the README.</div>
     `;
     animateIn(statsEl);
+    lastFleetSolveContext = {
+      hour, method, nVehicles: solveData.n_vehicles_used, maxStopsPerVehicle, demands, vehicleCapacity,
+      cost_minutes: solveData.total_cost_minutes,
+      vehicleOrders: solveData.vehicles.map(v => ({ vehicle: v.vehicle, order: v.order })),
+    };
+    _setLiveReoptButtonEnabled(true);
   } catch (err) {
     showError(err.message || 'Request failed.');
   } finally {
@@ -2113,6 +2683,7 @@ function _buildShareUrl() {
     // Rounded to ~11cm precision — plenty for a pin, and keeps the link short.
     p: clickedPoints.map(([lat, lon]) => [Math.round(lat * 1e6) / 1e6, Math.round(lon * 1e6) / 1e6]),
     prec: precedenceRules,
+    tw: timeWindows,
     w: stopWeights,
   };
   const url = new URL(window.location.href);
@@ -2148,7 +2719,7 @@ document.getElementById('shareBtn').addEventListener('click', async () => {
     document.getElementById('citySelect').value = state.c;
     map.setView(CENTERS[state.c], 13);
   }
-  if (state.m === 'quantum' || state.m === 'classical') {
+  if (state.m === 'quantum' || state.m === 'classical' || state.m === 'qpu') {
     document.getElementById('methodSelect').value = state.m;
   }
   const hourOptions = Array.from(document.getElementById('hourSelect').options).map(o => o.value);
@@ -2159,6 +2730,7 @@ document.getElementById('shareBtn').addEventListener('click', async () => {
     document.getElementById('vehicleSelect').value = state.v;
     document.getElementById('capacityWrap').style.display = isFleetMode() ? 'flex' : 'none';
     document.getElementById('precedenceBtn').style.display = isFleetMode() ? 'none' : '';
+    document.getElementById('timeWindowsBtn').style.display = isFleetMode() ? 'none' : '';
   }
   if (state.cap) document.getElementById('capacityInput').value = state.cap;
   if (state.cm === 'weight' || state.cm === 'count') {
@@ -2181,6 +2753,25 @@ document.getElementById('shareBtn').addEventListener('click', async () => {
         Number.isInteger(pair[0]) && Number.isInteger(pair[1]) &&
         pair[0] > 0 && pair[0] < points.length - 1 && pair[1] > 0 && pair[1] < points.length - 1,
       );
+    }
+
+    // Same idea for time windows, single-vehicle mode only: keep only
+    // entries whose index still refers to a real interior stop, with a
+    // valid [earliest, latest] pair, after truncation.
+    if (state.tw && typeof state.tw === 'object' && !isFleetMode()) {
+      timeWindows = {};
+      Object.keys(state.tw).forEach((k) => {
+        const idx = parseInt(k, 10);
+        const window = state.tw[k];
+        if (
+          Number.isInteger(idx) && idx > 0 && idx < points.length - 1 &&
+          Array.isArray(window) && window.length === 2 &&
+          typeof window[0] === 'number' && typeof window[1] === 'number' &&
+          window[0] >= 0 && window[1] >= window[0]
+        ) {
+          timeWindows[idx] = window;
+        }
+      });
     }
 
     // Same idea for per-stop weights, fleet mode only: keep only entries

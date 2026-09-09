@@ -82,6 +82,7 @@ def _medoid(W: np.ndarray, cluster: list[int]) -> int:
 def solve_open_path_scalable(
     W: np.ndarray, start_idx: int, end_idx: int, method: str = "quantum", cluster_size: int = 9,
     precedence: list[tuple[int, int]] | None = None,
+    position_windows: dict[int, tuple[int, int]] | None = None,
 ) -> dict:
     """Same return shape as qubo_tsp.solve_open_path_quantum_inspired /
     baseline.nearest_neighbor_2opt_open_path — {"path", "cost",
@@ -103,13 +104,33 @@ def solve_open_path_scalable(
     silently ignore it, this raises so the caller (app.py validates this
     before ever getting here) has to make an explicit choice instead of
     getting a route that quietly violates a constraint it asked for.
+
+    `position_windows`: optional {interior_stop_index: (t_min, t_max)}
+    tour-POSITION range constraints — see qubo_tsp.add_position_window_penalty
+    and time_windows.derive_position_window (the caller, app.py, converts a
+    real clock-time window into this provably-safe position range before
+    ever calling this function — this function does not do that conversion
+    itself). HONEST SCOPE: same restriction as `precedence`, for the same
+    reason (a position tied to the FULL route can't be enforced within an
+    independently-solved sub-cluster's own local positions) — only
+    supported on the direct (single-cluster) path below. Also only
+    supported for method="quantum" or method="qpu": baseline.py's
+    classical nearest-neighbor + 2-opt repair has no notion of a position
+    constraint at all, so method="classical" raises rather than silently
+    ignoring a window it was asked to honor.
     """
     t0 = time.perf_counter()
     n = W.shape[0]
     middle = [v for v in range(n) if v not in (start_idx, end_idx)]
 
-    def _solve_small(w, s, e, prec=None):
+    def _solve_small(w, s, e, prec=None, pwin=None):
         if method == "classical":
+            if pwin:
+                raise ValueError(
+                    "method=\"classical\" doesn't support position-window (time-window) constraints "
+                    "— the nearest-neighbor + 2-opt baseline has no notion of a position constraint. "
+                    "Use method=\"quantum\" or method=\"qpu\" instead."
+                )
             if prec:
                 return nearest_neighbor_2opt_open_path_with_precedence_repair(w, s, e, prec)
             return nearest_neighbor_2opt_open_path(w, s, e)
@@ -120,11 +141,11 @@ def solve_open_path_scalable(
                     "your own D-Wave Leap API token — see README.md's \"Real quantum hardware "
                     "validation\" section. Neither is configured here."
                 )
-            return solve_open_path_on_qpu(w, s, e, precedence=prec)
-        return solve_open_path_quantum_inspired(w, s, e, precedence=prec)
+            return solve_open_path_on_qpu(w, s, e, precedence=prec, position_windows=pwin)
+        return solve_open_path_quantum_inspired(w, s, e, precedence=prec, position_windows=pwin)
 
     if len(middle) <= cluster_size:
-        result = _solve_small(W, start_idx, end_idx, prec=precedence)
+        result = _solve_small(W, start_idx, end_idx, prec=precedence, pwin=position_windows)
         result["clusters_used"] = 1
         result["wall_seconds"] = time.perf_counter() - t0
         return result
@@ -134,6 +155,13 @@ def solve_open_path_scalable(
             "precedence constraints aren't supported once stops need to be split into "
             "multiple clusters (more than cluster_size interior stops) — the clusters are "
             "solved independently, so a cross-cluster precedence pair can't be enforced."
+        )
+    if position_windows:
+        raise ValueError(
+            "position-window (time-window) constraints aren't supported once stops need to be "
+            "split into multiple clusters (more than cluster_size interior stops) — same reason "
+            "as precedence: clusters are solved independently, so a position tied to the full "
+            "route's visiting order can't be enforced within a sub-cluster's own local positions."
         )
 
     n_clusters = -(-len(middle) // cluster_size)  # ceil division

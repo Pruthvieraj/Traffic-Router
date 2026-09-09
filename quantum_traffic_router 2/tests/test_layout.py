@@ -773,6 +773,105 @@ def test_precedence_rules_remap_after_a_solve_and_drop_on_stop_removal(live_serv
     assert after_removal == [[1, 3], [4, 5]]
 
 
+# ---------- time-window ("arrive between X and Y minutes") rules panel ----------
+
+def test_time_windows_panel_lets_you_add_and_remove_a_rule(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    for x, y in [(200, 200), (300, 200), (400, 200), (500, 200)]:
+        page.click("#map", position={"x": x, "y": y})
+    page.wait_for_function("clickedPoints.length === 4")
+
+    page.click("#timeWindowsBtn")
+    page.wait_for_function("document.getElementById('timeWindowsPanel').style.display === 'flex'")
+
+    # Same eligibility as precedence: point 0 is Start, point 3 is End, so
+    # only 1 and 2 are interior stops a window can be attached to.
+    options = page.eval_on_selector_all("#twStopSelect option", "els => els.map(e => e.value)")
+    assert options == ["1", "2"]
+
+    page.select_option("#twStopSelect", "2")
+    page.fill("#twEarliestInput", "10")
+    page.fill("#twLatestInput", "25")
+    page.click("#twAddBtn")
+    assert "Stop 2: 10–25 min" in page.inner_text("#timeWindowsList")
+    assert page.evaluate("timeWindows") == {"2": [10, 25]}
+
+    page.click("#timeWindowsList button")
+    page.wait_for_function("document.getElementById('timeWindowsList').children.length === 0")
+    rules_after_remove = page.evaluate("timeWindows")
+    page.close()
+    assert rules_after_remove == {}
+
+
+def test_time_windows_panel_rejects_invalid_ranges(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    for x, y in [(200, 200), (300, 200), (400, 200)]:
+        page.click("#map", position={"x": x, "y": y})
+    page.wait_for_function("clickedPoints.length === 3")
+
+    page.click("#timeWindowsBtn")
+    page.wait_for_function("document.getElementById('timeWindowsPanel').style.display === 'flex'")
+
+    # earliest > latest
+    page.fill("#twEarliestInput", "30")
+    page.fill("#twLatestInput", "10")
+    page.click("#twAddBtn")
+    assert "Earliest must be <= latest" in page.inner_text("#timeWindowsStatus")
+    assert page.evaluate("timeWindows") == {}
+
+    # missing latest entirely
+    page.fill("#twEarliestInput", "5")
+    page.fill("#twLatestInput", "")
+    page.click("#twAddBtn")
+    status = page.inner_text("#timeWindowsStatus")
+    rules = page.evaluate("timeWindows")
+    page.close()
+    assert "Enter both" in status
+    assert rules == {}
+
+
+def test_time_windows_button_hides_in_fleet_mode(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    assert page.eval_on_selector("#timeWindowsBtn", "el => getComputedStyle(el).display") != "none"
+
+    page.select_option("#vehicleSelect", "2")
+    display = page.eval_on_selector("#timeWindowsBtn", "el => getComputedStyle(el).display")
+    page.close()
+    assert display == "none"
+
+
+def test_time_windows_remap_after_a_solve_and_drop_on_stop_removal(live_server, browser):
+    """Same direct-function-call pattern as the precedence remap/drop test
+    above: exercise _remapTimeWindowsAfterSolve and
+    _removeTimeWindowForRemovedIndex with synthetic state, no real
+    solve/network needed."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    remapped = page.evaluate("""
+        () => {
+            timeWindows = {1: [5, 15], 3: [20, 30]};
+            _remapTimeWindowsAfterSolve([0, 3, 1, 2, 4]); // order[newPos] = oldIdx
+            return timeWindows;
+        }
+    """)
+    assert remapped == {"2": [5, 15], "1": [20, 30]}
+
+    after_removal = page.evaluate("""
+        () => {
+            timeWindows = {1: [5, 15], 2: [20, 30], 5: [40, 50]};
+            _removeTimeWindowForRemovedIndex(2);
+            return timeWindows;
+        }
+    """)
+    page.close()
+    assert after_removal == {"1": [5, 15], "4": [40, 50]}
+
+
 # ---------- per-stop weights (fleet mode "Max load/vehicle") ----------
 
 def test_weights_button_only_appears_in_fleet_mode_with_weighted_capacity(live_server, browser):
@@ -964,3 +1063,132 @@ def test_live_reopt_stops_and_disables_when_points_are_cleared(live_server, brow
     page.close()
     assert is_active_after_clear is False
     assert disabled_after_clear is True
+
+
+def test_live_reopt_works_in_fleet_mode_and_ticks_without_crashing(live_server, browser):
+    """Fleet-mode support in _liveReoptTickFleet() previously had only
+    unit-level coverage (fleetOrderChanged in tests/frontend/) and Flask-
+    test-client coverage of /api/solve_fleet's new incident_pairs field —
+    this exercises the actual dispatch (liveReoptTick() picking the fleet
+    tick over the single-vehicle one) end-to-end through a real browser,
+    the same way the single-vehicle tests above do."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    _stub_osrm(page, 4)
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    page.select_option("#vehicleSelect", "2")
+    page.evaluate("""
+        () => {
+            addPoint(12.97, 77.59); addPoint(12.93, 77.62);
+            addPoint(12.91, 77.63); addPoint(12.90, 77.65);
+        }
+    """)
+    page.click("#solveBtn")
+    page.wait_for_function("document.getElementById('stats').style.display === 'block'", timeout=10000)
+    disabled_after_fleet_solve = page.eval_on_selector("#liveReoptBtn", "el => el.disabled")
+
+    page.click("#liveReoptBtn")
+    page.wait_for_function(
+        "document.getElementById('liveFeed-list').children.length > 1", timeout=10000,
+    )
+    is_active = page.eval_on_selector("#liveReoptBtn", "el => el.classList.contains('live-active')")
+    feed_text = page.inner_text("#liveFeed-list")
+
+    page.click("#liveReoptBtn")  # stop
+    page.wait_for_function(
+        "!document.getElementById('liveReoptBtn').classList.contains('live-active')", timeout=5000,
+    )
+    page.close()
+
+    assert disabled_after_fleet_solve is False  # Live re-optimize is no longer fleet-disabled
+    assert is_active is True
+    assert "min" in feed_text  # a real fleet re-solve logged a real cost figure
+
+
+# ---------- Method comparison panel ----------
+
+def test_compare_button_enabled_state_tracks_point_count_and_fleet_mode(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    disabled_with_no_points = page.eval_on_selector("#compareBtn", "el => el.disabled")
+    page.evaluate("() => { addPoint(12.97, 77.59); addPoint(12.93, 77.62); }")
+    disabled_with_two_points = page.eval_on_selector("#compareBtn", "el => el.disabled")
+
+    page.select_option("#vehicleSelect", "2")
+    disabled_in_fleet_mode = page.eval_on_selector("#compareBtn", "el => el.disabled")
+    page.select_option("#vehicleSelect", "1")
+    disabled_after_back_to_single = page.eval_on_selector("#compareBtn", "el => el.disabled")
+
+    page.close()
+    assert disabled_with_no_points is True
+    assert disabled_with_two_points is False
+    assert disabled_in_fleet_mode is True
+    assert disabled_after_back_to_single is False
+
+
+def test_compare_methods_draws_both_routes_and_shows_a_side_by_side_table(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    _stub_osrm(page, 3)
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.evaluate(
+        "() => { addPoint(12.97, 77.59); addPoint(12.93, 77.62); addPoint(12.91, 77.63); }"
+    )
+
+    page.click("#compareBtn")
+    page.wait_for_function(
+        "document.getElementById('compareContent').textContent.includes('Drive time')", timeout=10000,
+    )
+
+    panel_visible = page.eval_on_selector("#comparePanel", "el => getComputedStyle(el).display") == "flex"
+    content_text = page.inner_text("#compareContent")
+    layer_count = page.evaluate("compareRouteLayer ? compareRouteLayer.getLayers().length : 0")
+    # main routeLayer/lastSolveContext must be untouched — comparing is
+    # deliberately non-committing, unlike a real "Solve route" click.
+    last_solve_context = page.evaluate("lastSolveContext")
+
+    page.close()
+    assert panel_visible
+    assert "min" in content_text
+    assert layer_count >= 2  # one polyline per method
+    assert last_solve_context is None
+
+
+def test_compare_methods_omits_time_windows_from_the_classical_request_only(live_server, browser):
+    """Classical has no notion of a position constraint (see app.py's
+    _validate_time_windows) — sending time_windows on that side would 400
+    and kill the whole comparison, so compareMethods() must send it only
+    on the quantum-inspired request. Verified by intercepting both
+    /api/solve calls and inspecting their actual JSON bodies, not just
+    trusting the UI didn't show an error."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    _stub_osrm(page, 3)
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.evaluate(
+        "() => { addPoint(12.97, 77.59); addPoint(12.93, 77.62); addPoint(12.91, 77.63); }"
+    )
+    page.evaluate("() => { timeWindows[1] = [5, 20]; }")
+
+    page.evaluate("""
+        () => {
+            window.__solveBodies = [];
+            const realFetch = window.fetch;
+            window.fetch = (url, opts) => {
+                if (typeof url === 'string' && url.includes('/api/solve') && !url.includes('_fleet')) {
+                    window.__solveBodies.push(JSON.parse(opts.body));
+                }
+                return realFetch(url, opts);
+            };
+        }
+    """)
+    page.click("#compareBtn")
+    page.wait_for_function("window.__solveBodies && window.__solveBodies.length === 2", timeout=10000)
+    bodies = page.evaluate("window.__solveBodies")
+    page.close()
+
+    by_method = {b["method"]: b for b in bodies}
+    assert by_method["quantum"]["time_windows"] == {"1": [5, 20]}
+    assert by_method["classical"]["time_windows"] == {}

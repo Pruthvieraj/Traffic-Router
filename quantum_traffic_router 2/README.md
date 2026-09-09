@@ -279,20 +279,21 @@ cosmetic: it asserts the chosen order actually differs once the spike is
 applied.
 
 **Continuous re-optimization — the "Live re-optimize" demo.** The incident
-button above is one manual re-solve, triggered by a click. Once a
-single-vehicle route is solved, the "▶ Live re-optimize" button in the
-topbar automates a repeated version of the same thing: every 4 seconds, a
-simulated clock advances 15 minutes, a random leg has roughly a 1-in-3
-chance of getting the same incident spike `simulateIncident()` uses, and
-the exact same `/api/solve` endpoint is called again — no separate,
-unverified code path, just the ordinary solve loop run on a timer. A live
-feed panel logs each tick ("6:45 PM — traffic shifted, rerouted (38.2 min,
--3.1 min)" / "7:00 PM — checked, current order still best (41.0 min, +0.0
-min)"), and the map redraws only when the optimizer actually finds a
-different order, so the "rerouted" moments are genuinely earned, not
-cosmetic. It auto-stops after 20 cycles (a demo safety cap, and comfortably
-under `/api/solve`'s 20-requests/minute rate limit) or immediately if a
-manual solve, a fleet-mode switch, or clearing points supersedes it.
+button above is one manual re-solve, triggered by a click. Once a route is
+solved (single-vehicle OR fleet mode — see below), the "▶ Live
+re-optimize" button in the topbar automates a repeated version of the same
+thing: every 4 seconds, a simulated clock advances 15 minutes, a random
+leg has roughly a 1-in-3 chance of getting the same incident spike
+`simulateIncident()` uses, and the exact same solve endpoint is called
+again — no separate, unverified code path, just the ordinary solve loop
+run on a timer. A live feed panel logs each tick ("6:45 PM — traffic
+shifted, rerouted (38.2 min, -3.1 min)" / "7:00 PM — checked, current order
+still best (41.0 min, +0.0 min)"), and the map redraws only when the
+optimizer actually finds a different order, so the "rerouted" moments are
+genuinely earned, not cosmetic. It auto-stops after 20 cycles (a demo
+safety cap, and comfortably under `/api/solve`'s 20-requests/minute rate
+limit) or immediately if a manual solve, a vehicle-count/mode switch, or
+clearing points supersedes it.
 
 **Said plainly, because judges will ask:** this is a simulated clock
 ticking forward through `src/congestion.py`'s time-of-day model, not a
@@ -304,9 +305,33 @@ inject an incident, and phrasing what the feed says happened) lives in
 file the turn-by-turn directions formatting already lived in — and is unit
 tested in `tests/frontend/route_helpers.test.js` with fixed random-number
 inputs, so the decision logic is verified without needing a running
-browser or a timer. Single-vehicle routes only, at least for this first
-cut — fleet mode's per-vehicle state makes an honest automated loop
-meaningfully more work than this demo currently does.
+browser or a timer.
+
+**Fleet mode is now covered too.** `liveReoptTick()` dispatches to either
+`_liveReoptTickSingle()` (the original loop, unchanged) or
+`_liveReoptTickFleet()` depending on which mode the last real solve was
+in. The fleet tick re-solves against `/api/solve_fleet` using the exact
+fleet configuration (vehicle count, capacity cap, demand weights) from
+that last solve, applies the same simulated-clock/random-incident logic,
+and redraws every vehicle's own route in its own color (with its own
+traveling-marker animation) whenever any vehicle's own stop order changes
+— `fleetOrderChanged()` in `static/route_helpers.js` (unit tested
+alongside the rest of that file) decides that by comparing each vehicle's
+order tick-to-tick, not just the fleet total. This needed `/api/solve_fleet`
+to accept `incident_pairs`/`incident_multiplier` too (previously
+`/api/solve`-only) — see app.py's `solve_fleet()` and
+`tests/test_app.py`'s `test_solve_fleet_with_incident_pairs_*` tests. What's
+still NOT done: precedence rules aren't sent to `/api/solve_fleet` even on
+a manual fleet solve (see "Precedence" above), so the live loop doesn't
+invent that either — it only re-solves whatever a manual fleet solve
+already sends. Tested at three levels: `fleetOrderChanged()`'s own
+decision logic is unit tested (`tests/frontend/route_helpers.test.js`),
+`/api/solve_fleet`'s new `incident_pairs` support is tested via the Flask
+test client (`tests/test_app.py`), and the actual end-to-end dispatch
+(`liveReoptTick()` picking the fleet tick over the single-vehicle one,
+solving, and logging a real tick) is covered by a real-browser Playwright
+test (`test_live_reopt_works_in_fleet_mode_and_ticks_without_crashing` in
+`tests/test_layout.py`) the same way the single-vehicle loop already was.
 
 **Multi-vehicle dispatch — a first step toward real VRP.** Everything
 above is single-vehicle TSP: one start, one end, one route. The "Vehicles"
@@ -585,6 +610,29 @@ judge's first ten seconds are visual before they're technical:
   unpredictably 400 depending on how the split happens to fall — an API
   consumer that already knows its own stop-to-vehicle assignment (or that
   pins `n_vehicles=1`) doesn't have that problem.
+- **Method comparison — quantum-inspired vs. classical, side by side.** A
+  "Compare methods" button (single-vehicle mode only) solves your CURRENT
+  stops with both methods in parallel (`compareMethods()` in
+  `templates/click_router.html`) and draws both resulting routes on the
+  map in distinct colors, with a table of drive time / free-flow baseline
+  / savings-vs-click-order / solve time for each and which one actually
+  came out faster on this specific instance — a measurement of one
+  concrete case, explicitly NOT presented as "quantum always wins" (that
+  claim would need `src/benchmark.py`'s aggregate-across-many-random-
+  instances experiments, which is what those experiments are for; this
+  panel's footnote says so). Deliberately non-committing: it draws into
+  its own map layer and panel, and never touches `clickedPoints`,
+  `lastSolveContext`, or the main route/directions/live-reopt state, so
+  running a comparison can't be confused with (or interfere with) actually
+  solving a route. Any precedence rules are sent to both sides; time
+  windows are sent to the quantum-inspired side only, since classical has
+  no notion of a position constraint and would otherwise 400 out the whole
+  comparison. Covered by 3 Playwright tests in `tests/test_layout.py`
+  (button enable/disable tracks point count and fleet mode, a real
+  side-by-side solve renders both routes and the table without touching
+  `lastSolveContext`, and — by intercepting `window.fetch` and inspecting
+  the actual request bodies — time windows really are omitted from just
+  the classical request).
 - **Small credibility details:** an info icon next to the method selector
   explaining in plain language what "quantum-inspired" actually means
   (simulated annealing on a QUBO, on classical hardware — not real quantum
@@ -759,8 +807,8 @@ pip install pytest
 pytest tests/ -v
 ```
 
-**338 Python tests** (374 total including the layout suite below, plus a
-separate 10-test Node.js frontend suite — see below), covering the QUBO
+**352 Python tests** (396 total including the layout suite below, plus a
+separate 14-test Node.js frontend suite — see below), covering the QUBO
 solver, the classical baselines, the multi-objective time/distance
 trade-off (`combine_objectives`, real-vs-cosmetic-objective checks), route
 explainability (`src/explain.py` — leg breakdowns, precedence-cost
@@ -802,11 +850,13 @@ chosen route order (not just the displayed number), and that
 `/api/solve_fleet` assigns every stop to exactly one vehicle even under a
 capacity constraint.
 
-There's also a **10-test frontend suite** (`tests/frontend/`) for the
+There's also a **14-test frontend suite** (`tests/frontend/`) for the
 frontend logic that used to have zero coverage — the turn-by-turn
-direction-building/formatting helpers, plus the "Live re-optimize" demo's
+direction-building/formatting helpers, the "Live re-optimize" demo's
 tick-by-tick decision logic (advancing simulated time, picking whether/
-where to inject an incident, phrasing the live feed) — both in
+where to inject an incident, phrasing the live feed), and the fleet
+analogue of that decision logic (`fleetOrderChanged` — did ANY vehicle's
+own stop order change tick-to-tick, not just the fleet total) — all in
 `static/route_helpers.js`. It needs only Node.js 18+ (its built-in test
 runner, no npm install):
 
@@ -814,7 +864,7 @@ runner, no npm install):
 node --test tests/frontend/*.test.js
 ```
 
-**And a 36-test real-browser layout suite** (`tests/test_layout.py`),
+**And a 44-test real-browser layout suite** (`tests/test_layout.py`),
 added after a real bug shipped through a fully green test suite and
 several rounds of manual screenshots: the topbar had a fixed height
 combined with `flex-wrap`, so on a narrower browser window its second row
@@ -1053,9 +1103,20 @@ black box.
 **Already wired into the live app:** both `/api/solve` and
 `/api/solve_fleet` now return an `"explanation"` field built from the route
 they just solved (see `app.py`) — covered by 4 tests in `tests/test_app.py`.
-**Honest gap:** the frontend (`templates/click_router.html`) doesn't render
-this yet — the data reaches the browser in every response, but there's no
-UI panel showing the leg breakdown or bottleneck leg to the user. `explain_precedence_impact`'s before/after comparison also isn't called from either endpoint yet, since it means a second solve (real added latency for a live click) — it's available as a library function and demonstrated in `tests/test_explain.py`, not yet exposed as its own API route.
+**Now rendered in the UI too:** a collapsible "Why this route?" panel in
+the stats sidebar (`_explanationHtml()` in `templates/click_router.html`)
+shows the bottleneck leg, per-rule precedence checks, and — in fleet
+mode — each vehicle's own breakdown plus its capacity headroom, computed
+from that vehicle's own path positions rather than the combined fleet's.
+Also shown alongside it: each time-window rule's real checked outcome
+(`_timeWindowChecksHtml()` — see "Time-window constraints" below) and a
+clearly-labeled-as-an-estimate fuel/CO2 figure (`_fuelCo2Html()`, generic
+average-petrol-car constants disclosed as such, not measured for any real
+vehicle). **Honest gap:** `explain_precedence_impact`'s before/after
+comparison still isn't called from either endpoint, since it means a
+second solve (real added latency for a live click) — it's available as a
+library function and demonstrated in `tests/test_explain.py`, not yet
+exposed as its own API route or UI control.
 
 ## Time-window constraints — a partial, honestly-scoped answer, not a solved one
 
@@ -1115,14 +1176,33 @@ and see the "Experiment 5" section of `output/report.md`; run
 `python3 -m pytest tests/test_time_windows.py tests/test_benchmark_experiment5.py`
 (19 tests) to re-verify the rigor claims and the measured gap above.
 
-**Not yet done:** wired into neither the live app (`app.py`) nor the
-frontend — `time_windows.py` is a library-level feature, demonstrated and
-tested, not yet exposed as its own API endpoint. And, stated plainly
-because it's the honest conclusion of Experiment 5 above: **this is not a
-wall-clock time-window guarantee** — it is real, tested, rigorous pruning
-that measurably helps, with the true reformulation needed for a guarantee
-left as explicit future work rather than something this iteration claims to
-have solved.
+**Now wired into the live app and the UI.** `/api/solve` accepts an
+optional `time_windows` field (`{"point_index": [earliest, latest]}`,
+minutes from the Start point) — see app.py's `_validate_time_windows` and
+`solve()`, which converts each window to a position bound via
+`derive_position_window` against the ACTUAL congested matrix about to be
+solved on, solves, then verifies the real result via
+`compute_arrival_schedule`/`check_time_windows` and returns
+`time_window_checks`/`all_time_windows_satisfied` — never just the pruning
+guarantee. Same honest scope as everywhere else this restriction applies:
+`method="quantum"`/`"qpu"` only (classical 2-opt has no notion of a
+position constraint), and only up to `CLUSTER_SIZE` interior stops (7
+tests in `tests/test_app.py`, 4 in `tests/test_clustering.py`). The
+click-map UI's "Time windows" panel (`templates/click_router.html`,
+mirroring the existing Precedence panel's UI pattern) lets you author
+these rules directly — pick a stop, set an earliest/latest minute, Add —
+and the checked outcome (met/missed, with slack or how much it missed by)
+renders inside the "Why this route?" explanation panel after solving. Only
+in single-vehicle mode, since `/api/solve_fleet` doesn't accept this
+field. Covered by 4 Playwright layout tests in `tests/test_layout.py`
+(add/remove a rule, reject an invalid range, hide in fleet mode, and the
+remap/drop-on-removal helpers). Stated plainly because it's still the
+honest conclusion of Experiment 5 above: **this is not a wall-clock
+time-window guarantee** — it is real, tested, rigorous pruning that
+measurably helps and is now checked against the real solved schedule on
+every request, with the true reformulation needed for an unconditional
+guarantee left as explicit future work rather than something this
+iteration claims to have solved.
 
 ## Real quantum hardware validation (optional, but a strong differentiator)
 
@@ -1161,7 +1241,10 @@ though:
    quote or screenshot it when a judge asks "is this actually quantum, or
    just named that"), or pass `"method": "qpu"` to `/api/solve` /
    `/api/solve_fleet` for a live, real-hardware-backed solve in the app
-   itself.
+   itself — or, now, just pick "Real QPU (D-Wave annealer)" from the
+   click-map UI's method dropdown directly (it was API-only before; the
+   dropdown previously only offered Quantum-inspired/Classical even though
+   the backend already supported `qpu` everywhere).
 
 **Without a token configured** (this project's default, and this
 sandbox's own actual state while building this feature — the failure
@@ -1353,9 +1436,13 @@ this is knowing which half is done:
   images, rather than replacing it with a live API).
 - **Continuous re-optimization** — the "Live re-optimize" topbar toggle
   (see "Continuous re-optimization") repeatedly re-solves against a
-  simulated clock, not a real live feed. What's NOT done: fleet-mode
-  support, and anything resembling a real vehicle's live GPS position
-  feeding back into the loop (there is no real vehicle here to track).
+  simulated clock, not a real live feed, in BOTH single-vehicle and fleet
+  mode (fleet-mode support was added after the section above was first
+  written — see "Fleet mode is now covered too" there). What's NOT done:
+  anything resembling a real vehicle's live GPS position feeding back into
+  the loop (there is no real vehicle here to track), and precedence rules
+  in the fleet-mode loop (the manual fleet solve itself doesn't send them
+  yet either).
 - **Using real map data**: `src/city_graph.py` has `build_live_osm_graph()`
   using `osmnx` to pull an actual OpenStreetMap road network for any place
   name — swap it in for `build_demo_graph()` once you've confirmed your

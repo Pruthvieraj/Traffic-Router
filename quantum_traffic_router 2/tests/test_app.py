@@ -53,6 +53,96 @@ def test_solve_valid_quantum(client):
     assert sorted(data["order"]) == [0, 1, 2]
 
 
+def test_solve_time_window_satisfied_is_reported_and_reflects_the_real_schedule(client):
+    matrix = [
+        [0, 300, 400, 500, 600],
+        [300, 0, 200, 350, 450],
+        [400, 200, 0, 300, 400],
+        [500, 350, 300, 0, 250],
+        [600, 450, 400, 250, 0],
+    ]
+    resp = client.post(
+        "/api/solve",
+        json={"matrix": matrix, "method": "quantum", "time_windows": {"2": [5, 15]}},
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["time_windows_applied"] is True
+    assert len(data["time_window_checks"]) == 1
+    check = data["time_window_checks"][0]
+    assert check["waypoint_index"] == 2
+    assert check["satisfied"] is True
+    assert data["all_time_windows_satisfied"] is True
+    # the reported arrival time must match independently recomputing it
+    # from the real solved order + the SAME congested matrix the server
+    # actually solved on (hour defaults to noon, so congestion.py's model
+    # still applies a real multiplier — this isn't just the free-flow
+    # matrix), not just be trusted/echoed back.
+    import numpy as np
+    from congestion import apply_congestion_to_matrix
+    from time_windows import compute_arrival_schedule
+    W_free_flow = np.array(matrix, dtype=float) / 60.0
+    W_congested = apply_congestion_to_matrix(W_free_flow, hour=12.0)
+    schedule = compute_arrival_schedule(data["order"], W_congested)
+    expected_arrival = next(s["arrival_time"] for s in schedule if s["waypoint_index"] == 2)
+    assert check["arrival_time"] == pytest.approx(expected_arrival, abs=0.05)
+
+
+def test_solve_omitting_time_windows_behaves_exactly_as_before(client):
+    matrix = [[0, 300, 600], [300, 0, 400], [600, 400, 0]]
+    resp = client.post("/api/solve", json={"matrix": matrix, "method": "quantum"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["time_windows_applied"] is False
+    assert data["time_window_checks"] == []
+    assert data["all_time_windows_satisfied"] is True
+
+
+def test_solve_time_window_on_start_or_end_point_is_rejected(client):
+    matrix = [[0, 300, 600], [300, 0, 400], [600, 400, 0]]
+    resp = client.post(
+        "/api/solve", json={"matrix": matrix, "method": "quantum", "time_windows": {"0": [1, 5]}},
+    )
+    assert resp.status_code == 400
+    assert "Start or End" in resp.get_json()["error"]
+
+
+def test_solve_time_window_with_classical_method_is_rejected(client):
+    matrix = [[0, 300, 600], [300, 0, 400], [600, 400, 0]]
+    resp = client.post(
+        "/api/solve", json={"matrix": matrix, "method": "classical", "time_windows": {"1": [1, 5]}},
+    )
+    assert resp.status_code == 400
+    assert "classical" in resp.get_json()["error"]
+
+
+def test_solve_time_window_malformed_value_is_rejected(client):
+    matrix = [[0, 300, 600], [300, 0, 400], [600, 400, 0]]
+    resp = client.post(
+        "/api/solve", json={"matrix": matrix, "method": "quantum", "time_windows": {"1": [5]}},
+    )
+    assert resp.status_code == 400
+
+
+def test_solve_provably_infeasible_time_window_returns_a_clear_400_not_a_500(client):
+    matrix = [[0, 300, 600], [300, 0, 400], [600, 400, 0]]
+    resp = client.post(
+        "/api/solve", json={"matrix": matrix, "method": "quantum", "time_windows": {"1": [10000, 10001]}},
+    )
+    assert resp.status_code == 400
+    assert "point 1" in resp.get_json()["error"]
+
+
+def test_solve_time_windows_above_cluster_size_is_rejected(client):
+    n = 14
+    matrix = [[0.0 if i == j else 300.0 + abs(i - j) * 10 for j in range(n)] for i in range(n)]
+    resp = client.post(
+        "/api/solve", json={"matrix": matrix, "method": "quantum", "time_windows": {"3": [1, 5]}},
+    )
+    assert resp.status_code == 400
+    assert "interior" in resp.get_json()["error"]
+
+
 def test_solve_accepts_optional_points_field_without_changing_result(client):
     """`points` (real [lat, lon] coordinates matching the matrix's rows) is
     an optional field that only the live-traffic provider needs — see
@@ -464,6 +554,40 @@ def test_solve_fleet_without_demands_leaves_demand_field_null(client):
     data = resp.get_json()
     assert all(v["demand"] is None for v in data["vehicles"])
     assert data["vehicle_capacity"] is None
+
+
+def test_solve_fleet_without_incident_pairs_flags_it_false(client):
+    matrix = _six_stop_fleet_matrix()
+    resp = client.post("/api/solve_fleet", json={"matrix": matrix, "method": "classical", "n_vehicles": 2})
+    assert resp.status_code == 200
+    assert resp.get_json()["incident_applied"] is False
+
+
+def test_solve_fleet_with_incident_pairs_flags_it_true_and_changes_the_solve(client):
+    matrix = _six_stop_fleet_matrix()
+    baseline = client.post(
+        "/api/solve_fleet", json={"matrix": matrix, "method": "classical", "n_vehicles": 2}
+    ).get_json()
+    spiked = client.post("/api/solve_fleet", json={
+        "matrix": matrix, "method": "classical", "n_vehicles": 2,
+        "incident_pairs": [[0, 1]], "incident_multiplier": 50.0,
+    })
+    assert spiked.status_code == 200
+    data = spiked.get_json()
+    assert data["incident_applied"] is True
+    # A 50x spike on a leg touching the depot should make the fleet's total
+    # noticeably worse than the unspiked baseline — same "does this actually
+    # change the solve, not just flip a flag" bar as /api/solve's own
+    # incident tests use.
+    assert data["total_cost_minutes"] > baseline["total_cost_minutes"]
+
+
+def test_solve_fleet_rejects_malformed_incident_pairs(client):
+    matrix = _six_stop_fleet_matrix()
+    resp = client.post("/api/solve_fleet", json={
+        "matrix": matrix, "method": "classical", "n_vehicles": 2, "incident_pairs": [[0]],
+    })
+    assert resp.status_code == 400
 
 
 # ---------- /api/analytics ----------

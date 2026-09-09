@@ -156,8 +156,28 @@
     };
   }
 
+  function fleetOrderChanged(prevVehicleOrders, newVehicles) {
+    // Fleet analogue of the single-vehicle "did the order change" check
+    // the live-reopt tick needs, extended to "did ANY vehicle's own stop
+    // order change" — a fleet reroute is worth telling the user about
+    // even if only one of several vehicles actually changed. Vehicle ids
+    // are stable across ticks (n_vehicles_used only changes due to a
+    // capacity cap being newly unsatisfiable, not from traffic alone), but
+    // this is defensive about a mismatched/missing id or vehicle count
+    // rather than assuming that.
+    if (!prevVehicleOrders || prevVehicleOrders.length !== newVehicles.length) return true;
+    const prevByVehicle = {};
+    prevVehicleOrders.forEach(v => { prevByVehicle[v.vehicle] = v.order; });
+    return newVehicles.some(v => {
+      const prevOrder = prevByVehicle[v.vehicle];
+      if (!prevOrder || prevOrder.length !== v.order.length) return true;
+      return prevOrder.some((idx, i) => idx !== v.order[i]);
+    });
+  }
+
   return {
     stopLabel, formatHour, formatDistance, ordinal, maneuverText, buildDirections,
     advanceSimulatedHour, shouldTriggerIncident, pickIncidentLeg, describeLiveTick,
+    fleetOrderChanged,
   };
 });

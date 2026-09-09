@@ -53,6 +53,7 @@ from traffic_provider import get_traffic_provider  # noqa: E402
 from qubo_tsp import open_path_length, satisfies_precedence  # noqa: E402
 from build_multi_city_map import load_inline_leaflet  # noqa: E402
 from explain import explain_fleet, explain_path  # noqa: E402
+from time_windows import check_time_windows, compute_arrival_schedule, derive_position_window  # noqa: E402
 import analytics  # noqa: E402
 
 app = Flask(__name__)
@@ -114,6 +115,40 @@ def _validate_precedence(precedence, n, start_idx, end_idx):
     return None
 
 
+def _validate_time_windows(time_windows, n, start_idx, end_idx):
+    """Returns an error message string if `time_windows` (the request
+    body's optional {"point_index_as_string": [earliest, latest]} map,
+    minutes from departure) is malformed or names an impossible
+    constraint, or None if it's fine to pass through to the solver.
+    Mirrors _validate_precedence's contract and reasoning — a bad request
+    should always get a clear 400, never a generic 500."""
+    if not isinstance(time_windows, dict):
+        return "time_windows must be an object mapping point index (as a string) to [earliest, latest] minutes."
+    for key, window in time_windows.items():
+        try:
+            idx = int(key)
+        except (TypeError, ValueError):
+            return f"time_windows keys must be point indices, got {key!r}."
+        if not (0 <= idx < n):
+            return f"time_windows keys must be valid point indices (0-{n - 1}), got {idx}."
+        if idx in (start_idx, end_idx):
+            return (
+                f"Point {idx} can't have a time window — it's the fixed Start or End point, whose "
+                "position in the route is already fixed by construction, not something a window on "
+                "arrival time could meaningfully constrain."
+            )
+        if not isinstance(window, list) or len(window) != 2:
+            return f"time_windows[{key}] must be a [earliest, latest] pair of minutes."
+        earliest, latest = window
+        if not (isinstance(earliest, (int, float)) and isinstance(latest, (int, float))):
+            return f"time_windows[{key}] values must be numbers."
+        if earliest < 0 or latest < 0:
+            return f"time_windows[{key}] values must be non-negative minutes."
+        if earliest > latest:
+            return f"time_windows[{key}]: earliest ({earliest}) must be <= latest ({latest})."
+    return None
+
+
 # Which traffic data source feeds the congestion layer. Defaults to the
 # disclosed, reproducible simulated rush-hour model (src/congestion.py) —
 # see src/traffic_provider.py for how a real paid traffic API would plug
@@ -149,6 +184,7 @@ def index():
         leaflet_css=_LEAFLET_CSS,
         leaflet_js=_LEAFLET_JS,
         max_stops=MAX_STOPS,
+        cluster_size=CLUSTER_SIZE,
         osrm_base_url=OSRM_BASE_URL,
     )
 
@@ -201,6 +237,14 @@ def solve():
     # a post-hoc filter — see src/qubo_tsp.py's build_open_path_bqm and
     # README.md "Where the QUBO framing actually earns its keep."
     precedence = body.get("precedence") or []
+    # Optional: {"point_index_as_string": [earliest, latest]} arrival-time
+    # windows (minutes from departure, start_offset=0) on interior stops —
+    # see src/time_windows.py. HONEST SCOPE: single-vehicle /api/solve
+    # only for this first cut (not /api/solve_fleet), and — same
+    # restriction as precedence — only within a single QUBO's stop count,
+    # and only for method="quantum"/"qpu" (baseline.py's classical 2-opt
+    # has no notion of a position constraint at all).
+    time_windows_raw = body.get("time_windows") or {}
     # Optional: [[lat, lon], ...] real-world coordinates for each point, in
     # the SAME order as `matrix`'s rows. Nothing else in this project's
     # optimization core needs coordinates (see src/distance_matrix.py — the
@@ -243,6 +287,22 @@ def solve():
                      "solved clusters and a precedence pair can't be reliably enforced across them. "
                      "Remove the precedence rule, or reduce the number of stops."
         }), 400
+    time_windows_error = _validate_time_windows(time_windows_raw, n, start_idx, end_idx)
+    if time_windows_error:
+        return jsonify({"error": time_windows_error}), 400
+    if time_windows_raw and interior_count > CLUSTER_SIZE:
+        return jsonify({
+            "error": f"Time-window constraints are only supported up to {CLUSTER_SIZE} interior "
+                     "stops in this first cut — above that, stops are split across independently-"
+                     "solved clusters and a position-window constraint can't be reliably enforced "
+                     "across them. Remove the time window, or reduce the number of stops."
+        }), 400
+    if time_windows_raw and method == "classical":
+        return jsonify({
+            "error": "Time-window constraints aren't supported with method=\"classical\" — the "
+                     "nearest-neighbor + 2-opt baseline has no notion of a position constraint. "
+                     "Use quantum-inspired or qpu instead."
+        }), 400
 
     try:
         # OSRM durations are in seconds and are FREE-FLOW (no congestion at
@@ -264,6 +324,22 @@ def solve():
         if incident_applied:
             W_congested = apply_incident_spikes(W_congested, incident_pairs, multiplier=incident_multiplier)
 
+        # Time windows: convert each requested real clock-time window into
+        # a provably-safe tour-POSITION range against the ACTUAL matrix
+        # this request is about to solve on (congested, with any incident
+        # spike already applied) — see src/time_windows.py's
+        # derive_position_window for the rigor behind this. Re-raising with
+        # the point index attached (derive_position_window's own message
+        # doesn't know which point it was called for) so a 400 says exactly
+        # which window is the problem.
+        time_windows_by_index = {int(k): tuple(v) for k, v in time_windows_raw.items()}
+        position_windows = {}
+        for idx, window in time_windows_by_index.items():
+            try:
+                position_windows[idx] = derive_position_window(W_congested, window, start_offset=0.0)
+            except ValueError as e:
+                raise ValueError(f"Time window for point {idx} {tuple(window)}: {e}") from e
+
         # solve_open_path_scalable is an exact passthrough to the direct
         # QUBO/classical solver at or below CLUSTER_SIZE interior stops, and
         # automatically clusters-and-stitches above that — see
@@ -273,8 +349,21 @@ def solve():
         result = solve_open_path_scalable(
             W_congested, start_idx, end_idx, method=method, cluster_size=CLUSTER_SIZE,
             precedence=[tuple(p) for p in precedence] or None,
+            position_windows=position_windows or None,
         )
         path = result["path"]
+
+        # Honest verification, always: the position-window pruning above is
+        # provably SAFE but not provably SUFFICIENT (see time_windows.py's
+        # own module docstring) — so the real arrival schedule of whatever
+        # tour was actually found gets checked against every requested
+        # window, and the response reports the checked fact, never just
+        # the (weaker) pruning guarantee.
+        schedule = compute_arrival_schedule(path, W_congested, start_offset=0.0) if time_windows_by_index else None
+        time_window_checks = check_time_windows(schedule, time_windows_by_index) if time_windows_by_index else []
+        all_time_windows_satisfied = (
+            all(c["satisfied"] for c in time_window_checks) if time_windows_by_index else True
+        )
 
         # Same order, two different cost bases — lets the UI honestly show
         # "with today's traffic" vs "if there were none" for the identical route.
@@ -321,6 +410,9 @@ def solve():
             "precedence_applied": bool(precedence),
             "precedence_satisfied": satisfies_precedence(path, [tuple(p) for p in precedence]) if precedence else True,
             "explanation": explanation,
+            "time_windows_applied": bool(time_windows_by_index),
+            "time_window_checks": time_window_checks,
+            "all_time_windows_satisfied": all_time_windows_satisfied,
         })
 
     except ValueError as e:
@@ -371,6 +463,13 @@ def solve_fleet():
     # contract and purpose as /api/solve's `points` field (see its comment
     # above); threaded through to the active TRAFFIC_PROVIDER unchanged.
     points = body.get("points")
+    # Optional extra congestion spike on specific legs — same semantics as
+    # /api/solve's incident_pairs (a single shared congestion matrix is
+    # built below, then this spike is applied before the fleet split, so
+    # every vehicle solves against the same "road now closed/jammed" view,
+    # not just whichever vehicle happens to own that leg).
+    incident_pairs = body.get("incident_pairs") or []
+    incident_multiplier = float(body.get("incident_multiplier", 4.0))
 
     if not isinstance(matrix, list) or len(matrix) < 3:
         return jsonify({"error": "Need at least a depot plus 2 stops to split across vehicles."}), 400
@@ -385,6 +484,10 @@ def solve_fleet():
     ):
         return jsonify({"error": "points, if provided, must be a list of [lat, lon] pairs matching matrix rows."}), 400
     coords = [tuple(p) for p in points] if points is not None else None
+    if not isinstance(incident_pairs, list) or any(
+        not isinstance(p, list) or len(p) != 2 for p in incident_pairs
+    ):
+        return jsonify({"error": "incident_pairs must be a list of [i, j] index pairs."}), 400
     if not (0 <= depot_index < n):
         return jsonify({"error": "depot_index out of range."}), 400
     if n_vehicles < 1:
@@ -435,6 +538,9 @@ def solve_fleet():
     try:
         W_free_flow = np.array(matrix, dtype=float) / 60.0
         W_congested = _traffic_provider.get_congested_matrix(W_free_flow, hour=hour, coords=coords)
+        incident_applied = bool(incident_pairs)
+        if incident_applied:
+            W_congested = apply_incident_spikes(W_congested, incident_pairs, multiplier=incident_multiplier)
         stop_indices = [i for i in range(n) if i != depot_index]
 
         # demands_by_index may not cover every stop_index if the client sent
@@ -512,6 +618,7 @@ def solve_fleet():
             "vehicle_capacity": vehicle_capacity,
             "precedence_applied": bool(precedence),
             "precedence_satisfied": precedence_satisfied,
+            "incident_applied": incident_applied,
             "explanation": explanation,
         })
 

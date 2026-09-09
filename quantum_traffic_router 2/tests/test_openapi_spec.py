@@ -52,7 +52,7 @@ def test_solve_response_fields_match_the_real_app_py_response(spec):
         "order", "cost_minutes", "free_flow_minutes", "naive_order_minutes",
         "savings_vs_naive_pct", "hour_simulated", "method", "solve_ms",
         "clusters_used", "incident_applied", "precedence_applied", "precedence_satisfied",
-        "explanation",
+        "explanation", "time_windows_applied", "time_window_checks", "all_time_windows_satisfied",
     }
     assert expected <= props
 
@@ -62,7 +62,7 @@ def test_solve_fleet_response_fields_match_the_real_app_py_response(spec):
     expected = {
         "vehicles", "total_cost_minutes", "total_free_flow_minutes",
         "n_vehicles_used", "hour_simulated", "method", "solve_ms", "max_stops_per_vehicle",
-        "vehicle_capacity", "explanation",
+        "vehicle_capacity", "explanation", "incident_applied",
     }
     assert expected <= props
 

@@ -259,6 +259,29 @@ components:
               type: number
             minItems: 2
             maxItems: 2
+        time_windows:
+          type: object
+          nullable: true
+          description: >
+            Optional {"point_index_as_string": [earliest, latest]} map —
+            an arrival-time-from-departure window in minutes on one or
+            more INTERIOR stops (not the fixed Start/End points). See
+            src/time_windows.py: each window is converted into a
+            provably-safe tour-position range before solving (a real
+            guarantee against being discarded unfairly, not a guarantee of
+            satisfaction — see SolveResponse.time_window_checks for the
+            checked outcome), then verified against the real arrival
+            schedule of whatever route was actually found. HONEST SCOPE:
+            only supported up to CLUSTER_SIZE interior stops (same limit as
+            precedence), and only with method="quantum" or method="qpu" —
+            method="classical" has no notion of a position constraint and
+            is rejected with a 400 rather than silently ignoring the window.
+          additionalProperties:
+            type: array
+            items:
+              type: number
+            minItems: 2
+            maxItems: 2
 
     SolveResponse:
       type: object
@@ -300,6 +323,26 @@ components:
           description: True if `order` satisfies every requested precedence rule (always true when precedence_applied is false — nothing to violate).
         explanation:
           $ref: '#/components/schemas/RouteExplanation'
+        time_windows_applied:
+          type: boolean
+          description: Whether the request included any time windows.
+        time_window_checks:
+          type: array
+          description: >
+            Per-requested-window checked outcome against the REAL arrival
+            schedule of `order` — never just the pruning guarantee. Empty
+            when time_windows_applied is false.
+          items:
+            type: object
+            properties:
+              waypoint_index: { type: integer }
+              window: { type: array, items: { type: number }, minItems: 2, maxItems: 2 }
+              arrival_time: { type: number, nullable: true }
+              satisfied: { type: boolean }
+              slack_minutes: { type: number, nullable: true, description: "Minutes of margin to the nearer bound; negative slack isn't reported (a violation is just satisfied=false)." }
+        all_time_windows_satisfied:
+          type: boolean
+          description: True if every requested window is actually satisfied by the real arrival schedule (always true when time_windows_applied is false — nothing to violate).
 
     RouteExplanation:
       type: object
@@ -416,6 +459,23 @@ components:
               type: number
             minItems: 2
             maxItems: 2
+        incident_pairs:
+          type: array
+          description: >
+            Same semantics as SolveRequest.incident_pairs — applied to the
+            one shared congestion matrix BEFORE it's split across vehicles,
+            so every vehicle solves against the same incident, not just
+            whichever one happens to own that leg.
+          items:
+            type: array
+            items:
+              type: integer
+            minItems: 2
+            maxItems: 2
+        incident_multiplier:
+          type: number
+          default: 4.0
+          description: How much to multiply the travel time of each incident_pairs leg by.
 
     SolveFleetResponse:
       type: object
@@ -461,6 +521,13 @@ components:
         vehicle_capacity:
           type: number
           nullable: true
+        precedence_applied:
+          type: boolean
+        precedence_satisfied:
+          type: boolean
+          description: Verified against each pair's owning vehicle's own path — see app.py's solve_fleet.
+        incident_applied:
+          type: boolean
         explanation:
           type: object
           description: >
