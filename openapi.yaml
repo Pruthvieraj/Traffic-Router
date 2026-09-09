@@ -1,0 +1,624 @@
+openapi: 3.0.3
+info:
+  title: Quantum-Inspired Traffic Router API
+  description: >
+    The optimization backend behind the click-anywhere app (app.py). This
+    API does no mapping/geocoding/street-data work at all — the browser
+    already computed a real, road-network-based travel-time matrix via
+    OSRM before calling either solve endpoint here. That's why both solve
+    endpoints are pure, fast, network-free optimization: given a
+    travel-time matrix, find the best visiting order (and, for the fleet
+    endpoint, the best split across vehicles). A third endpoint,
+    /api/analytics, is a live aggregate usage counter for the running
+    demo process — see its own description for scope. See README.md for
+    the full architecture rationale.
+  version: "1.0.0"
+  license:
+    name: See project README
+servers:
+  - url: http://127.0.0.1:5000
+    description: Local development server
+  - url: https://traffic-router.onrender.com
+    description: Live deployed demo (may be asleep — Render's free tier spins
+      down after ~15 minutes idle; the first request wakes it up and can
+      take 30-50 seconds)
+
+paths:
+  /api/analytics:
+    get:
+      summary: A live, aggregate usage counter for this running process
+      description: >
+        No auth, no request body — just open the URL. Returns aggregate
+        counts only (total solves, split by endpoint/method, error count,
+        average solve time); no per-request data (matrices, IPs,
+        timestamps of individual calls) is ever stored. See
+        src/analytics.py's docstring for the honest scope: this is an
+        in-process counter that resets on every restart/redeploy and is
+        specific to whichever single worker process serves the request —
+        not a durable analytics pipeline, just a live number for the
+        current running demo.
+      responses:
+        '200':
+          description: Current aggregate usage counters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsResponse'
+
+  /api/solve:
+    post:
+      summary: Solve the best fixed-start/fixed-end visiting order for one vehicle
+      description: >
+        Takes a travel-time matrix (index 0 = start, last index = end,
+        everything in between = stops to visit in some order) and returns
+        the optimal order under simulated time-of-day traffic, optionally
+        with an on-demand incident spike applied to specific legs. Rate
+        limited to 20 requests/minute per IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolveRequest'
+            examples:
+              basic:
+                summary: A 3-point route, quantum-inspired method, evening peak traffic
+                value:
+                  matrix: [[0, 300, 600], [300, 0, 400], [600, 400, 0]]
+                  method: quantum
+                  hour: 18.5
+              withIncident:
+                summary: Same route, with a simulated accident on the start-to-stop-1 leg
+                value:
+                  matrix: [[0, 300, 600], [300, 0, 400], [600, 400, 0]]
+                  method: classical
+                  hour: 18.5
+                  incident_pairs: [[0, 1]]
+                  incident_multiplier: 4.0
+              withPrecedence:
+                summary: A 4-point route where point 1 must be visited before point 2
+                value:
+                  matrix: [[0, 300, 600, 900], [300, 0, 400, 700], [600, 400, 0, 500], [900, 700, 500, 0]]
+                  method: quantum
+                  precedence: [[1, 2]]
+      responses:
+        '200':
+          description: A solved route
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolveResponse'
+        '400':
+          description: Malformed request (bad matrix shape, too many/few points, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded (more than 20 requests/minute from this IP)
+        '500':
+          description: Unexpected solver error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/solve_fleet:
+    post:
+      summary: Split stops across multiple vehicles and solve each vehicle's closed-loop route
+      description: >
+        Multi-vehicle dispatch: point index `depot_index` becomes a shared
+        depot, and every other point is split across `n_vehicles`, each
+        solved as its own exact closed-loop (depot -> its stops -> depot)
+        tour. The split is always rebalanced to a fair share
+        (ceil(stops / n_vehicles)) by default; `max_stops_per_vehicle` can
+        impose a stricter cap (auto-raising n_vehicles if the requested
+        fleet can't satisfy it). See src/clustering.py's solve_multi_vehicle
+        docstring for the full, honestly-scoped explanation of what this
+        does and doesn't guarantee (not a full capacitated VRP solver — no
+        time windows, no joint cross-vehicle optimization). Rate limited to
+        20 requests/minute per IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolveFleetRequest'
+            examples:
+              basic:
+                summary: A depot plus 5 stops, split across 2 vehicles
+                value:
+                  matrix: [[0,300,400,500,600,700],[300,0,200,350,450,550],[400,200,0,300,400,500],[500,350,300,0,300,400],[600,450,400,300,0,300],[700,550,500,400,300,0]]
+                  method: quantum
+                  n_vehicles: 2
+                  depot_index: 0
+              withCapacity:
+                summary: Same, but no vehicle may carry more than 2 stops
+                value:
+                  matrix: [[0,300,400,500,600,700],[300,0,200,350,450,550],[400,200,0,300,400,500],[500,350,300,0,300,400],[600,450,400,300,0,300],[700,550,500,400,300,0]]
+                  method: classical
+                  n_vehicles: 2
+                  depot_index: 0
+                  max_stops_per_vehicle: 2
+              withDemandWeights:
+                summary: Same, but capacity is a per-stop weight limit instead of a stop count
+                value:
+                  matrix: [[0,300,400,500,600,700],[300,0,200,350,450,550],[400,200,0,300,400,500],[500,350,300,0,300,400],[600,450,400,300,0,300],[700,550,500,400,300,0]]
+                  method: classical
+                  n_vehicles: 2
+                  depot_index: 0
+                  demands: {"1": 40, "2": 40, "3": 90, "4": 40, "5": 40}
+                  vehicle_capacity: 100
+      responses:
+        '200':
+          description: A solved fleet plan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolveFleetResponse'
+        '400':
+          description: Malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+        '500':
+          description: Unexpected solver error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    SolveRequest:
+      type: object
+      required: [matrix]
+      properties:
+        matrix:
+          type: array
+          description: >
+            Square NxN travel-time matrix in SECONDS (as returned by OSRM's
+            Table API), free-flow (no congestion applied yet — the server
+            applies the active traffic provider itself). Index 0 is the
+            start point, index N-1 is the end point, everything else is an
+            interior stop. 2 <= N <= MAX_STOPS (40 by default).
+          items:
+            type: array
+            items:
+              type: number
+        method:
+          type: string
+          enum: [quantum, classical, qpu]
+          default: quantum
+          description: >
+            quantum = QUBO + simulated annealing (classical hardware,
+            no account needed); classical = nearest-neighbor + 2-opt
+            baseline; qpu = the SAME QUBO submitted to a real D-Wave
+            quantum annealer — needs the deployment's own configured
+            D-Wave Leap API token (see README.md "Real quantum hardware
+            validation"), fails with a clear 400 if none is configured,
+            and is capped at a small instance size for real hardware
+            embeddability (src/qpu_solver.py).
+        hour:
+          type: number
+          format: float
+          default: 12.0
+          minimum: 0
+          maximum: 24
+          description: Simulated hour of day (affects traffic congestion via the active traffic provider).
+        incident_pairs:
+          type: array
+          description: Optional [i, j] index pairs to hit with an extra on-demand congestion spike.
+          items:
+            type: array
+            items:
+              type: integer
+            minItems: 2
+            maxItems: 2
+        incident_multiplier:
+          type: number
+          default: 4.0
+          description: How much to multiply the travel time of each incident_pairs leg by.
+        precedence:
+          type: array
+          description: >
+            Optional [u, v] interior-point-index pairs meaning "u must be
+            visited before v" (e.g. a pickup before its matching drop-off)
+            — baked directly into the QUBO/classical solve as a real
+            constraint. u/v naming the fixed start (index 0) or end
+            (index N-1) point is only valid in the direction that's
+            already true by construction (anything-before-end,
+            start-before-anything); the reverse is rejected as impossible.
+            Only supported when the interior stop count fits in a single
+            QUBO (see CLUSTER_SIZE server-side, 9 by default) — above
+            that, a 400 is returned rather than silently ignoring it.
+          items:
+            type: array
+            items:
+              type: integer
+            minItems: 2
+            maxItems: 2
+        points:
+          type: array
+          nullable: true
+          description: >
+            Optional [lat, lon] real-world coordinates, one per matrix row,
+            same order as `matrix`. Only used by a REAL live-traffic
+            provider (TRAFFIC_PROVIDER=google_routes — see
+            src/traffic_provider.py's GoogleRoutesTrafficProvider), which
+            needs coordinates to ask a live API for traffic-aware travel
+            times; ignored (and safe to omit) under the default
+            TRAFFIC_PROVIDER=simulated. If provided, must have exactly one
+            [lat, lon] pair per matrix row or the request is rejected.
+          items:
+            type: array
+            items:
+              type: number
+            minItems: 2
+            maxItems: 2
+        time_windows:
+          type: object
+          nullable: true
+          description: >
+            Optional {"point_index_as_string": [earliest, latest]} map —
+            an arrival-time-from-departure window in minutes on one or
+            more INTERIOR stops (not the fixed Start/End points). See
+            src/time_windows.py: each window is converted into a
+            provably-safe tour-position range before solving (a real
+            guarantee against being discarded unfairly, not a guarantee of
+            satisfaction — see SolveResponse.time_window_checks for the
+            checked outcome), then verified against the real arrival
+            schedule of whatever route was actually found. HONEST SCOPE:
+            only supported up to CLUSTER_SIZE interior stops (same limit as
+            precedence), and only with method="quantum" or method="qpu" —
+            method="classical" has no notion of a position constraint and
+            is rejected with a 400 rather than silently ignoring the window.
+          additionalProperties:
+            type: array
+            items:
+              type: number
+            minItems: 2
+            maxItems: 2
+
+    SolveResponse:
+      type: object
+      properties:
+        order:
+          type: array
+          items:
+            type: integer
+          description: The solved visiting order, as a list of matrix indices (starts at 0, ends at N-1).
+        cost_minutes:
+          type: number
+          description: Total travel time for `order`, under simulated traffic, in minutes.
+        free_flow_minutes:
+          type: number
+          description: What the same `order` would cost with zero congestion.
+        naive_order_minutes:
+          type: number
+          description: What visiting the points in their original (as-sent) order would have cost, under the same traffic.
+        savings_vs_naive_pct:
+          type: number
+          description: Percent time saved by the solved order vs. the naive order.
+        hour_simulated:
+          type: number
+        method:
+          type: string
+        solve_ms:
+          type: number
+          description: Wall-clock solver time in milliseconds.
+        clusters_used:
+          type: integer
+          description: 1 below the clustering threshold (exact solve); >1 above it (see "Scaling past a dozen stops" in README).
+        incident_applied:
+          type: boolean
+        precedence_applied:
+          type: boolean
+          description: Whether the request included any precedence rules.
+        precedence_satisfied:
+          type: boolean
+          description: True if `order` satisfies every requested precedence rule (always true when precedence_applied is false — nothing to violate).
+        explanation:
+          $ref: '#/components/schemas/RouteExplanation'
+        time_windows_applied:
+          type: boolean
+          description: Whether the request included any time windows.
+        time_window_checks:
+          type: array
+          description: >
+            Per-requested-window checked outcome against the REAL arrival
+            schedule of `order` — never just the pruning guarantee. Empty
+            when time_windows_applied is false.
+          items:
+            type: object
+            properties:
+              waypoint_index: { type: integer }
+              window: { type: array, items: { type: number }, minItems: 2, maxItems: 2 }
+              arrival_time: { type: number, nullable: true }
+              satisfied: { type: boolean }
+              slack_minutes: { type: number, nullable: true, description: "Minutes of margin to the nearer bound; negative slack isn't reported (a violation is just satisfied=false)." }
+        all_time_windows_satisfied:
+          type: boolean
+          description: True if every requested window is actually satisfied by the real arrival schedule (always true when time_windows_applied is false — nothing to violate).
+
+    RouteExplanation:
+      type: object
+      description: >
+        Route explainability (see src/explain.py) — a leg-by-leg breakdown
+        of the route just solved, computed by re-evaluating `order` against
+        the same cost matrix used to solve it, not just echoed back from
+        the solver.
+      properties:
+        legs:
+          type: array
+          items:
+            type: object
+            properties:
+              from_index:
+                type: integer
+              to_index:
+                type: integer
+              cost:
+                type: number
+              pct_of_total:
+                type: number
+        total_cost:
+          type: number
+        bottleneck_leg:
+          type: object
+          nullable: true
+          description: The single most expensive leg — same shape as one entry of `legs`.
+        precedence_checks:
+          type: array
+          items:
+            type: object
+            properties:
+              rule:
+                type: string
+              u_index:
+                type: integer
+              v_index:
+                type: integer
+              satisfied:
+                type: boolean
+              u_position:
+                type: integer
+                nullable: true
+              v_position:
+                type: integer
+                nullable: true
+
+    SolveFleetRequest:
+      type: object
+      required: [matrix]
+      properties:
+        matrix:
+          type: array
+          description: Square NxN free-flow travel-time matrix in seconds, N >= 3 (depot + at least 2 stops).
+          items:
+            type: array
+            items:
+              type: number
+        method:
+          type: string
+          enum: [quantum, classical, qpu]
+          default: quantum
+          description: See SolveRequest.method — same three options, same qpu caveats, applied per-vehicle.
+        hour:
+          type: number
+          default: 12.0
+        n_vehicles:
+          type: integer
+          default: 2
+          minimum: 1
+        depot_index:
+          type: integer
+          default: 0
+          description: Index of the shared depot within `matrix`.
+        max_stops_per_vehicle:
+          type: integer
+          nullable: true
+          description: >
+            Optional stricter-than-default capacity limit, by STOP COUNT.
+            When omitted, the split is still balanced by default (a
+            fair-share target of ceil(stops / n_vehicles)) — this field is
+            only for a HARDER cap than that fair share, and will auto-raise
+            n_vehicles if the requested fleet size can't satisfy it.
+            Mutually exclusive with demands/vehicle_capacity.
+        demands:
+          type: object
+          nullable: true
+          additionalProperties:
+            type: number
+          description: >
+            Optional per-stop demand weights (e.g. package weight/volume),
+            as {"point_index_as_string": weight}. Alternative to
+            max_stops_per_vehicle for when stops aren't all equally
+            "heavy" — capacity below is then a total-WEIGHT limit per
+            vehicle, not a stop count. Any stop_index not present here
+            defaults to a weight of 1. Mutually exclusive with
+            max_stops_per_vehicle.
+        vehicle_capacity:
+          type: number
+          nullable: true
+          description: >
+            Max total demand (summed `demands` weight, not stop count) any
+            one vehicle may carry. Only meaningful together with `demands`;
+            a single stop whose own demand exceeds this is rejected with a
+            400, since no fleet size could ever carry it.
+        points:
+          type: array
+          nullable: true
+          description: See SolveRequest.points — same contract, same optionality, same TRAFFIC_PROVIDER=google_routes purpose.
+          items:
+            type: array
+            items:
+              type: number
+            minItems: 2
+            maxItems: 2
+        incident_pairs:
+          type: array
+          description: >
+            Same semantics as SolveRequest.incident_pairs — applied to the
+            one shared congestion matrix BEFORE it's split across vehicles,
+            so every vehicle solves against the same incident, not just
+            whichever one happens to own that leg.
+          items:
+            type: array
+            items:
+              type: integer
+            minItems: 2
+            maxItems: 2
+        incident_multiplier:
+          type: number
+          default: 4.0
+          description: How much to multiply the travel time of each incident_pairs leg by.
+
+    SolveFleetResponse:
+      type: object
+      properties:
+        vehicles:
+          type: array
+          items:
+            type: object
+            properties:
+              vehicle:
+                type: integer
+              order:
+                type: array
+                items:
+                  type: integer
+                description: Full closed loop [depot, ...stops..., depot].
+              cost_minutes:
+                type: number
+              free_flow_minutes:
+                type: number
+              stops:
+                type: integer
+              demand:
+                type: number
+                nullable: true
+                description: Total demand (summed `demands` weight) this vehicle carries — null unless `demands` was sent in the request.
+        total_cost_minutes:
+          type: number
+        total_free_flow_minutes:
+          type: number
+        n_vehicles_used:
+          type: integer
+          description: May be higher than the requested n_vehicles if max_stops_per_vehicle or vehicle_capacity forced it up.
+        hour_simulated:
+          type: number
+        method:
+          type: string
+        solve_ms:
+          type: number
+        max_stops_per_vehicle:
+          type: integer
+          nullable: true
+        vehicle_capacity:
+          type: number
+          nullable: true
+        precedence_applied:
+          type: boolean
+        precedence_satisfied:
+          type: boolean
+          description: Verified against each pair's owning vehicle's own path — see app.py's solve_fleet.
+        incident_applied:
+          type: boolean
+        explanation:
+          type: object
+          description: >
+            Route explainability (see src/explain.py) — per-vehicle leg
+            breakdown, remaining capacity headroom (when demands/
+            vehicle_capacity were used), and which vehicle owns each
+            precedence rule.
+          properties:
+            vehicles:
+              type: array
+              items:
+                type: object
+                properties:
+                  vehicle:
+                    type: integer
+                  path:
+                    type: array
+                    items:
+                      type: integer
+                  legs:
+                    type: array
+                    items:
+                      type: object
+                  total_cost:
+                    type: number
+                  bottleneck_leg:
+                    type: object
+                    nullable: true
+                  demand:
+                    type: number
+                    nullable: true
+                  capacity_margin:
+                    type: number
+                    nullable: true
+                    description: vehicle_capacity minus this vehicle's demand — null unless demands/vehicle_capacity were used.
+                  capacity_margin_pct:
+                    type: number
+                    nullable: true
+                  precedence_checks:
+                    type: array
+                    items:
+                      type: object
+            total_cost:
+              type: number
+            n_vehicles:
+              type: integer
+
+    AnalyticsResponse:
+      type: object
+      properties:
+        since:
+          type: string
+          description: UTC timestamp this process started, ISO 8601.
+        uptime_seconds:
+          type: number
+        total_solves:
+          type: integer
+          description: solves.solve + solves.solve_fleet, both successful responses only.
+        solves_by_endpoint:
+          type: object
+          properties:
+            solve:
+              type: integer
+            solve_fleet:
+              type: integer
+        solves_by_method:
+          type: object
+          properties:
+            quantum:
+              type: integer
+            classical:
+              type: integer
+        avg_solve_ms:
+          type: number
+          nullable: true
+          description: Mean solve_ms across every successful solve so far; null before the first one.
+        errors:
+          type: integer
+          description: Count of non-2xx responses from either solve endpoint (bad input or a solver-layer exception).
+        incident_simulations:
+          type: integer
+        precedence_requests:
+          type: integer
+        demand_weight_requests:
+          type: integer
+        note:
+          type: string
+          description: The honest-scope caveat — always present (see src/analytics.py).
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string

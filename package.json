@@ -1,0 +1,12 @@
+{
+  "name": "quantum-traffic-router",
+  "private": true,
+  "description": "Node-side tooling for this project: the frontend helper test suite (tests/frontend/, needs only Node's built-in test runner — no dependency here) and generate_pitch_deck.js (needs pptxgenjs, listed below). Everything else in this project is Python — see requirements.txt.",
+  "scripts": {
+    "test:frontend": "node --test tests/frontend/*.test.js",
+    "pitch-deck": "node generate_pitch_deck.js"
+  },
+  "devDependencies": {
+    "pptxgenjs": "^4.0.1"
+  }
+}
