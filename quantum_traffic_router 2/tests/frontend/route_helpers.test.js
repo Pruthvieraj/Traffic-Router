@@ -18,6 +18,7 @@ const path = require('node:path');
 
 const {
   stopLabel, formatHour, formatDistance, ordinal, maneuverText, buildDirections,
+  advanceSimulatedHour, shouldTriggerIncident, pickIncidentLeg, describeLiveTick,
 } = require(path.join(__dirname, '..', '..', 'static', 'route_helpers.js'));
 
 test('stopLabel: Start / End / numbered interior stops', () => {
@@ -109,4 +110,49 @@ test('buildDirections: flattens OSRM legs into a line list with a stop marker at
   assert.equal(lines[4].legIdx, 1);
   assert.equal(lines[0].isStopMarker, false);
   assert.equal(lines[0].text, 'Head on A Road');
+});
+
+// ---------- Live re-optimization demo helpers ----------
+
+test('advanceSimulatedHour: steps forward and wraps past midnight', () => {
+  assert.equal(advanceSimulatedHour(9, 0.25), 9.25);
+  const wrapped = advanceSimulatedHour(23.9, 0.25);
+  assert.ok(wrapped >= 0 && wrapped < 1); // wrapped to just after midnight, not 24.15
+  assert.ok(Math.abs(wrapped - 0.15) < 1e-9);
+  assert.equal(advanceSimulatedHour(0, 0), 0);
+});
+
+test('shouldTriggerIncident: a simple deterministic threshold', () => {
+  assert.equal(shouldTriggerIncident(0.1, 0.35), true);
+  assert.equal(shouldTriggerIncident(0.35, 0.35), false); // boundary is exclusive
+  assert.equal(shouldTriggerIncident(0.9, 0.35), false);
+  assert.equal(shouldTriggerIncident(0, 0), false); // probability 0 never triggers
+});
+
+test('pickIncidentLeg: picks one of the stopCount-1 consecutive legs, deterministically from rngValue', () => {
+  assert.deepEqual(pickIncidentLeg(4, 0.0), [0, 1]);
+  assert.deepEqual(pickIncidentLeg(4, 0.99), [2, 3]); // last leg, never rounds past the end
+  assert.deepEqual(pickIncidentLeg(4, 0.5), [1, 2]);
+  assert.deepEqual(pickIncidentLeg(2, 0.7), [0, 1]); // only one possible leg
+  assert.equal(pickIncidentLeg(1, 0.5), null); // fewer than 2 points -> no leg to pick
+  assert.equal(pickIncidentLeg(0, 0.5), null);
+});
+
+test('describeLiveTick: reports a reroute honestly, including the incident leg and the real cost delta', () => {
+  const rerouted = describeLiveTick({
+    hour: 18.5, previousCost: 42.0, newCost: 39.5, orderChanged: true, incidentLeg: [1, 2],
+  });
+  assert.equal(rerouted.rerouted, true);
+  assert.match(rerouted.message, /Simulated incident on leg 1→2/);
+  assert.match(rerouted.message, /6:30 PM/);
+  assert.match(rerouted.message, /rerouted/);
+  assert.match(rerouted.message, /-2\.5 min/);
+
+  const unchanged = describeLiveTick({
+    hour: 9.0, previousCost: 20.0, newCost: 20.0, orderChanged: false, incidentLeg: null,
+  });
+  assert.equal(unchanged.rerouted, false);
+  assert.doesNotMatch(unchanged.message, /Simulated incident/);
+  assert.match(unchanged.message, /still best/);
+  assert.match(unchanged.message, /0\.0 min/);
 });

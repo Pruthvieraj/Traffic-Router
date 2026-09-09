@@ -8,6 +8,7 @@ flask>=3.0
 flask-limiter>=3.5
 osmnx>=1.9
 gunicorn>=21.2
+requests>=2.31
 
 # app.py no longer calls osmnx directly (see "ARCHITECTURE" in its own
 # docstring — real road-network queries moved client-side to OSRM). osmnx
@@ -23,6 +24,13 @@ gunicorn>=21.2
 # gunicorn is only needed when deploying app.py to a cloud host (Render,
 # Railway, etc.) — see the "Deploy to the cloud" section in README.md.
 # It's unused for local runs (python3 app.py uses Flask's own dev server).
+#
+# requests is a DIRECT dependency (not just transitive via osmnx/folium)
+# as of src/traffic_provider.py's GoogleRoutesTrafficProvider — the one
+# real, working live-traffic API integration in this project
+# (TRAFFIC_PROVIDER=google_routes). It's only exercised at runtime if that
+# provider is selected AND a GOOGLE_ROUTES_API_KEY is configured; the
+# default TRAFFIC_PROVIDER=simulated never imports it for real network use.
 #
 # dwave-system is NOT listed above on purpose — it's only needed if you
 # run run_on_real_quantum_hardware.py (a one-time pitch-deck credibility

@@ -38,7 +38,7 @@ def test_analytics_endpoint_is_documented(spec):
 
 @pytest.mark.parametrize("schema_name", [
     "SolveRequest", "SolveResponse", "SolveFleetRequest", "SolveFleetResponse",
-    "AnalyticsResponse", "ErrorResponse",
+    "AnalyticsResponse", "ErrorResponse", "RouteExplanation",
 ])
 def test_expected_schemas_are_defined(spec, schema_name):
     assert schema_name in spec["components"]["schemas"]
@@ -52,6 +52,7 @@ def test_solve_response_fields_match_the_real_app_py_response(spec):
         "order", "cost_minutes", "free_flow_minutes", "naive_order_minutes",
         "savings_vs_naive_pct", "hour_simulated", "method", "solve_ms",
         "clusters_used", "incident_applied", "precedence_applied", "precedence_satisfied",
+        "explanation",
     }
     assert expected <= props
 
@@ -61,7 +62,7 @@ def test_solve_fleet_response_fields_match_the_real_app_py_response(spec):
     expected = {
         "vehicles", "total_cost_minutes", "total_free_flow_minutes",
         "n_vehicles_used", "hour_simulated", "method", "solve_ms", "max_stops_per_vehicle",
-        "vehicle_capacity",
+        "vehicle_capacity", "explanation",
     }
     assert expected <= props
 

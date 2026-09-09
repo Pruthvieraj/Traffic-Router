@@ -105,5 +105,59 @@
     return lines;
   }
 
-  return { stopLabel, formatHour, formatDistance, ordinal, maneuverText, buildDirections };
+  // ---------- Live re-optimization demo (see templates/click_router.html's
+  // "Live re-optimize" button) ----------
+  // Pure decision/formatting logic for the continuous-re-optimization demo:
+  // every tick, simulated time advances, an incident MAY be injected on a
+  // random leg, and the route is re-solved — these functions decide "what
+  // hour is it now", "should this tick simulate an incident, and where",
+  // and "what should the live feed say happened", all as plain
+  // input->output functions (randomness is passed in as `rngValue`, not
+  // generated internally) so they're deterministic and testable the same
+  // way the rest of this file is, without needing a DOM or a timer.
+
+  function advanceSimulatedHour(hour, stepHours) {
+    const next = hour + stepHours;
+    return next >= 24 ? next - 24 : next;
+  }
+
+  function shouldTriggerIncident(rngValue, probability) {
+    return rngValue < probability;
+  }
+
+  function pickIncidentLeg(stopCount, rngValue) {
+    // Legs are consecutive-index pairs [i, i+1] in the CURRENT solved
+    // order (0 .. stopCount-1) — there are stopCount-1 of them. Returns
+    // null if there's no leg to pick (fewer than 2 points).
+    if (stopCount < 2) return null;
+    const legCount = stopCount - 1;
+    const i = Math.min(legCount - 1, Math.floor(rngValue * legCount));
+    return [i, i + 1];
+  }
+
+  function describeLiveTick({ hour, previousCost, newCost, orderChanged, incidentLeg }) {
+    // Never claims more than what a SIMULATED demo can honestly claim:
+    // "traffic changed and the route was checked/updated", not "a real
+    // vehicle rerouted live". incidentLeg, when present, is the [i, i+1]
+    // pair pickIncidentLeg returned for this tick.
+    const timeLabel = formatHour(hour);
+    const delta = newCost - previousCost;
+    const deltaText = `${delta > 0 ? '+' : ''}${delta.toFixed(1)} min`;
+    const incidentPrefix = incidentLeg ? `Simulated incident on leg ${incidentLeg[0]}→${incidentLeg[1]}: ` : '';
+    if (orderChanged) {
+      return {
+        rerouted: true,
+        message: `${incidentPrefix}${timeLabel} — traffic shifted, rerouted (${newCost.toFixed(1)} min, ${deltaText})`,
+      };
+    }
+    return {
+      rerouted: false,
+      message: `${incidentPrefix}${timeLabel} — checked, current order still best (${newCost.toFixed(1)} min, ${deltaText})`,
+    };
+  }
+
+  return {
+    stopLabel, formatHour, formatDistance, ordinal, maneuverText, buildDirections,
+    advanceSimulatedHour, shouldTriggerIncident, pickIncidentLeg, describeLiveTick,
+  };
 });

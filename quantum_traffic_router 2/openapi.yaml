@@ -191,9 +191,17 @@ components:
               type: number
         method:
           type: string
-          enum: [quantum, classical]
+          enum: [quantum, classical, qpu]
           default: quantum
-          description: quantum = QUBO + simulated annealing; classical = nearest-neighbor + 2-opt baseline.
+          description: >
+            quantum = QUBO + simulated annealing (classical hardware,
+            no account needed); classical = nearest-neighbor + 2-opt
+            baseline; qpu = the SAME QUBO submitted to a real D-Wave
+            quantum annealer — needs the deployment's own configured
+            D-Wave Leap API token (see README.md "Real quantum hardware
+            validation"), fails with a clear 400 if none is configured,
+            and is capped at a small instance size for real hardware
+            embeddability (src/qpu_solver.py).
         hour:
           type: number
           format: float
@@ -231,6 +239,24 @@ components:
             type: array
             items:
               type: integer
+            minItems: 2
+            maxItems: 2
+        points:
+          type: array
+          nullable: true
+          description: >
+            Optional [lat, lon] real-world coordinates, one per matrix row,
+            same order as `matrix`. Only used by a REAL live-traffic
+            provider (TRAFFIC_PROVIDER=google_routes — see
+            src/traffic_provider.py's GoogleRoutesTrafficProvider), which
+            needs coordinates to ask a live API for traffic-aware travel
+            times; ignored (and safe to omit) under the default
+            TRAFFIC_PROVIDER=simulated. If provided, must have exactly one
+            [lat, lon] pair per matrix row or the request is rejected.
+          items:
+            type: array
+            items:
+              type: number
             minItems: 2
             maxItems: 2
 
@@ -272,6 +298,55 @@ components:
         precedence_satisfied:
           type: boolean
           description: True if `order` satisfies every requested precedence rule (always true when precedence_applied is false — nothing to violate).
+        explanation:
+          $ref: '#/components/schemas/RouteExplanation'
+
+    RouteExplanation:
+      type: object
+      description: >
+        Route explainability (see src/explain.py) — a leg-by-leg breakdown
+        of the route just solved, computed by re-evaluating `order` against
+        the same cost matrix used to solve it, not just echoed back from
+        the solver.
+      properties:
+        legs:
+          type: array
+          items:
+            type: object
+            properties:
+              from_index:
+                type: integer
+              to_index:
+                type: integer
+              cost:
+                type: number
+              pct_of_total:
+                type: number
+        total_cost:
+          type: number
+        bottleneck_leg:
+          type: object
+          nullable: true
+          description: The single most expensive leg — same shape as one entry of `legs`.
+        precedence_checks:
+          type: array
+          items:
+            type: object
+            properties:
+              rule:
+                type: string
+              u_index:
+                type: integer
+              v_index:
+                type: integer
+              satisfied:
+                type: boolean
+              u_position:
+                type: integer
+                nullable: true
+              v_position:
+                type: integer
+                nullable: true
 
     SolveFleetRequest:
       type: object
@@ -286,8 +361,9 @@ components:
               type: number
         method:
           type: string
-          enum: [quantum, classical]
+          enum: [quantum, classical, qpu]
           default: quantum
+          description: See SolveRequest.method — same three options, same qpu caveats, applied per-vehicle.
         hour:
           type: number
           default: 12.0
@@ -330,6 +406,16 @@ components:
             one vehicle may carry. Only meaningful together with `demands`;
             a single stop whose own demand exceeds this is rejected with a
             400, since no fleet size could ever carry it.
+        points:
+          type: array
+          nullable: true
+          description: See SolveRequest.points — same contract, same optionality, same TRAFFIC_PROVIDER=google_routes purpose.
+          items:
+            type: array
+            items:
+              type: number
+            minItems: 2
+            maxItems: 2
 
     SolveFleetResponse:
       type: object
@@ -375,6 +461,52 @@ components:
         vehicle_capacity:
           type: number
           nullable: true
+        explanation:
+          type: object
+          description: >
+            Route explainability (see src/explain.py) — per-vehicle leg
+            breakdown, remaining capacity headroom (when demands/
+            vehicle_capacity were used), and which vehicle owns each
+            precedence rule.
+          properties:
+            vehicles:
+              type: array
+              items:
+                type: object
+                properties:
+                  vehicle:
+                    type: integer
+                  path:
+                    type: array
+                    items:
+                      type: integer
+                  legs:
+                    type: array
+                    items:
+                      type: object
+                  total_cost:
+                    type: number
+                  bottleneck_leg:
+                    type: object
+                    nullable: true
+                  demand:
+                    type: number
+                    nullable: true
+                  capacity_margin:
+                    type: number
+                    nullable: true
+                    description: vehicle_capacity minus this vehicle's demand — null unless demands/vehicle_capacity were used.
+                  capacity_margin_pct:
+                    type: number
+                    nullable: true
+                  precedence_checks:
+                    type: array
+                    items:
+                      type: object
+            total_cost:
+              type: number
+            n_vehicles:
+              type: integer
 
     AnalyticsResponse:
       type: object

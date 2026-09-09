@@ -49,9 +49,9 @@ below) and finishes in under a minute. Outputs land in `output/`:
 | `route_map.html` | Interactive map of a 6-stop Bengaluru delivery route at evening rush hour |
 | `route_map_after_spike.html` | The same route re-optimized after a simulated accident/closure |
 | `comparison_chart.png` | Experiment 1 chart: classical vs quantum-inspired (and Google OR-Tools, when installed) on plain routing |
-| `constraint_chart.png` | Experiment 2 chart: the one that actually matters — see below |
-| `report.md` | Full numeric results, in the wording used in the sections below |
-| `experiment_1_unconstrained.csv`, `experiment_2_constrained.csv` | Raw data behind both charts |
+| `constraint_chart.png` | Experiment 2 chart: single-constraint correctness — real, but not the whole patent story, see below |
+| `report.md` | Full numeric results for all five experiments, in the wording used in the sections below |
+| `experiment_1_unconstrained.csv`, `experiment_2_constrained.csv`, `experiment_3_composed.csv`, `experiment_4_multi_objective.csv`, `experiment_5_time_windows.csv` | Raw data behind the charts, Experiment 3's composed-vs-isolated numbers, Experiment 4's time-vs-distance trade-off numbers, and Experiment 5's time-window pruning-effectiveness numbers |
 | `pitch_deck.pptx` | A 12-slide pitch deck, generated from the CSVs above — see "A pitch deck, generated from the project's own real numbers" below (run `node generate_pitch_deck.js` separately; not produced by `main.py` itself) |
 
 ### About `multi_city_map.html` — satellite maps and the multi-city toggle
@@ -190,33 +190,74 @@ dropdown ("Morning peak", "Evening peak", "Late night", etc.) picks the
   order they were clicked, *under the same simulated traffic* — this is
   the number that answers "so what did the optimizer actually save?"
 
-**Said plainly, because judges will ask:** the congestion layer
+**Said plainly, because judges will ask:** the DEFAULT congestion layer
 (`rush_hour_multiplier()` — two Gaussian bumps around 9am and 6:30pm, plus
 small seeded per-pair variation so not every road is hit identically) is a
 **simulated time-of-day model, not a live traffic sensor feed** — the app
-says this directly in its own UI, right next to the numbers. The road
-*geometry* and *distances* are real (from OSRM); the *congestion* on top
-of them is a disclosed, reproducible simulation, the same honest framing
-this project has used everywhere else (see "The honest finding" below).
-The real upgrade path to live traffic is a paid provider (Google, TomTom,
-HERE, or Mapbox all sell traffic-aware routing APIs) — swapping one in
-means replacing `apply_congestion_to_matrix()`'s output with that
-provider's live congested-duration matrix; nothing else in the pipeline
-(the QUBO solver, the clustering, the savings metric) needs to change,
-because they only ever consume a travel-time matrix, not caring where its
-numbers came from.
+says this directly in its own UI, right next to the numbers, and it's what
+every live demo of this app uses unless `TRAFFIC_PROVIDER` is changed. The
+road *geometry* and *distances* are real (from OSRM); the *congestion* on
+top of them is, by default, a disclosed, reproducible simulation, the same
+honest framing this project has used everywhere else (see "The honest
+finding" below).
 
-**That upgrade path is now a concrete interface, not just a paragraph.**
+**The upgrade path to real live traffic is no longer just a paragraph — it's
+a real, working integration you can turn on with your own API key.**
 `src/traffic_provider.py` defines `TrafficProvider` — anything with a
-`get_congested_matrix(W_free_flow, hour)` method — and `app.py` picks one
-by name via the `TRAFFIC_PROVIDER` environment variable (default
-`simulated`), never calling `congestion.py` directly. `SimulatedTrafficProvider`
-is the only one actually wired to real data today; `LiveTrafficProviderStub`
-is a second class marking exactly where a real Google/TomTom/HERE
-integration would go, and raises a clear `NotImplementedError` if selected,
-rather than silently pretending to have live data it doesn't. Swapping in
-a real provider is "write one new class in this file, change one env var"
-— provably, since `app.py` never imports `congestion.py` at all anymore.
+`get_congested_matrix(W_free_flow, hour, coords=None)` method — and `app.py`
+picks one by name via the `TRAFFIC_PROVIDER` environment variable (default
+`simulated`), never calling `congestion.py` directly:
+
+- `simulated` (default) — `SimulatedTrafficProvider`, the reproducible model
+  above. Needs no API key, no network access, no coordinates.
+- `google_routes` — `GoogleRoutesTrafficProvider`, a REAL integration with
+  Google's Routes API "Compute Route Matrix" endpoint
+  (`routingPreference=TRAFFIC_AWARE_OPTIMAL`). Set `TRAFFIC_PROVIDER=google_routes`
+  and a `GOOGLE_ROUTES_API_KEY` (your own Google Cloud API key with the
+  Routes API enabled and billing configured — see
+  [Google's setup docs](https://developers.google.com/maps/documentation/routes/compute_route_matrix))
+  and `/api/solve` / `/api/solve_fleet` will fetch genuinely live,
+  traffic-aware travel times for the exact waypoints being solved, instead
+  of simulating them. This sandbox has no such key configured, so it can't
+  be demonstrated end-to-end here — the same honest limitation as the real
+  QPU integration (see below): the wiring is real and tested, the live call
+  isn't something this environment can make.
+- `live` — `LiveTrafficProviderStub`, a placeholder for any OTHER paid
+  provider (TomTom, HERE, Mapbox) that isn't `google_routes`, raising a
+  clear `NotImplementedError` if selected rather than silently pretending
+  to have live data it doesn't.
+
+**A real wrinkle this surfaced, and how it's handled.** A live traffic API
+computes travel times FROM real coordinates — it can't retrofit live
+traffic onto an already-computed free-flow matrix the way the simulated
+multiplier model does, and this project's optimization core (the QUBO
+solver, distance_matrix.py) never needed coordinates before, only a travel-
+time matrix. So `get_congested_matrix` gained an optional third parameter,
+`coords`, that `SimulatedTrafficProvider` ignores and `GoogleRoutesTrafficProvider`
+requires (raising a clear error if it's missing rather than guessing).
+`app.py`'s `/api/solve` and `/api/solve_fleet` both accept an optional
+`points` request field (`[[lat, lon], ...]`, matching the matrix's rows)
+threading exactly this through — `templates/click_router.html` already
+sends it (the browser has the clicked points' real coordinates anyway), so
+switching `TRAFFIC_PROVIDER` to `google_routes` with a real key works
+end-to-end through the live app with no frontend changes needed.
+
+**Testability without a real key or network access** follows the same
+dependency-injection pattern as the real QPU integration
+(`qpu_solver.py`'s `sampler=` override): `GoogleRoutesTrafficProvider`
+accepts an optional `session` object exposing the same
+`.post(url, headers=, json=, timeout=) -> response` shape `requests` does,
+so `tests/test_traffic_provider.py` verifies request construction and
+response parsing (including a genuinely asymmetric real-world matrix — one-
+way streets make A→B and B→A different, unlike the simulated provider's
+symmetric multiplier) with a lightweight fake session, no credentials
+needed. This sandbox's own real, unmocked lack of `GOOGLE_ROUTES_API_KEY`
+is used to test the real "no key configured" failure path, the same way
+the QPU tests use this sandbox's real lack of a D-Wave token.
+
+Swapping in a *different* real provider (TomTom/HERE/Mapbox) is still
+"write one new class in this file, change one env var" — provably, since
+`app.py` never imports `congestion.py` at all anymore.
 
 For a real deployment, `OSRM_BASE_URL` (an environment variable, defaults
 to the free public `router.project-osrm.org` demo server) lets you point
@@ -236,6 +277,36 @@ not just re-labeling the same path. `tests/test_app.py`'s
 `test_solve_incident_pairs_can_change_the_chosen_order` proves this isn't
 cosmetic: it asserts the chosen order actually differs once the spike is
 applied.
+
+**Continuous re-optimization — the "Live re-optimize" demo.** The incident
+button above is one manual re-solve, triggered by a click. Once a
+single-vehicle route is solved, the "▶ Live re-optimize" button in the
+topbar automates a repeated version of the same thing: every 4 seconds, a
+simulated clock advances 15 minutes, a random leg has roughly a 1-in-3
+chance of getting the same incident spike `simulateIncident()` uses, and
+the exact same `/api/solve` endpoint is called again — no separate,
+unverified code path, just the ordinary solve loop run on a timer. A live
+feed panel logs each tick ("6:45 PM — traffic shifted, rerouted (38.2 min,
+-3.1 min)" / "7:00 PM — checked, current order still best (41.0 min, +0.0
+min)"), and the map redraws only when the optimizer actually finds a
+different order, so the "rerouted" moments are genuinely earned, not
+cosmetic. It auto-stops after 20 cycles (a demo safety cap, and comfortably
+under `/api/solve`'s 20-requests/minute rate limit) or immediately if a
+manual solve, a fleet-mode switch, or clearing points supersedes it.
+
+**Said plainly, because judges will ask:** this is a simulated clock
+ticking forward through `src/congestion.py`'s time-of-day model, not a
+live GPS feed or a real fleet's position updating in real time — the same
+honest framing this project uses everywhere else. The tick-by-tick
+decision logic (advancing the simulated hour, picking whether/where to
+inject an incident, and phrasing what the feed says happened) lives in
+`static/route_helpers.js` as plain, dependency-free functions — the same
+file the turn-by-turn directions formatting already lived in — and is unit
+tested in `tests/frontend/route_helpers.test.js` with fixed random-number
+inputs, so the decision logic is verified without needing a running
+browser or a timer. Single-vehicle routes only, at least for this first
+cut — fleet mode's per-vehicle state makes an honest automated loop
+meaningfully more work than this demo currently does.
 
 **Multi-vehicle dispatch — a first step toward real VRP.** Everything
 above is single-vehicle TSP: one start, one end, one route. The "Vehicles"
@@ -655,10 +726,25 @@ The pipeline:
    quantum computing paradigm" below for the full honest scope of what
    this does and doesn't prove.
 10. **`src/traffic_provider.py`** — the pluggable interface between "a
-   free-flow travel-time matrix" and "a congestion-adjusted one," so the
-   simulated model above can be swapped for a real paid traffic API by
-   adding one class here, without touching anything upstream or downstream
-   of it (see "Traffic-awareness" above).
+   free-flow travel-time matrix" and "a congestion-adjusted one." Ships
+   with the simulated model above AND a real, working live-traffic
+   integration (`GoogleRoutesTrafficProvider`, `TRAFFIC_PROVIDER=google_routes`
+   + your own `GOOGLE_ROUTES_API_KEY`) — see "Traffic-awareness" above for
+   the full honest scope of what's genuinely wired up versus what still
+   needs your own API key/credentials to run live.
+11. **`src/qpu_solver.py`** — a real D-Wave quantum annealer as a first-class
+   solver `method` (`method="qpu"`), alongside the classical/quantum-inspired
+   methods above — see "Real quantum hardware validation" below for the
+   full honest scope of what's genuinely wired up versus what needs your
+   own D-Wave Leap account to run live.
+12. **`src/explain.py`** — turns a solved route (or fleet split) into a
+   plain-language, per-leg explanation (bottleneck leg, precedence checks,
+   capacity margin), returned alongside every `/api/solve` and
+   `/api/solve_fleet` response — see "Route explainability" below.
+13. **`src/time_windows.py`** — position-range pruning for real clock-time
+   arrival windows on top of the same QUBO — see "Time-window constraints"
+   below for the full honest scope (a partial, disclosed answer, not a
+   solved one).
 
 ## Automated tests
 
@@ -673,9 +759,22 @@ pip install pytest
 pytest tests/ -v
 ```
 
-**249 Python tests** (282 total including the frontend and layout suites
-below), covering the QUBO solver, the classical baselines, the
-clustering/scaling logic, the multi-vehicle dispatch demo (including the
+**338 Python tests** (374 total including the layout suite below, plus a
+separate 10-test Node.js frontend suite — see below), covering the QUBO
+solver, the classical baselines, the multi-objective time/distance
+trade-off (`combine_objectives`, real-vs-cosmetic-objective checks), route
+explainability (`src/explain.py` — leg breakdowns, precedence-cost
+attribution, per-vehicle capacity headroom), time-window position-pruning
+(`src/time_windows.py` — the provable-bound rigor claims and the measured
+pruning-helps-but-doesn't-guarantee gap), real-QPU wiring (`src/qpu_solver.py`
+— decode/selection logic verified via an injected stand-in sampler, the
+real no-token failure path checked unmocked), real-live-traffic wiring
+(`src/traffic_provider.py`'s `GoogleRoutesTrafficProvider` — request
+construction and response parsing verified via an injected fake HTTP
+session, the real no-API-key failure path checked unmocked, plus the
+`points`/`coords` plumbing through `/api/solve` and `/api/solve_fleet`),
+the clustering/scaling logic,
+the multi-vehicle dispatch demo (including the
 real per-vehicle capacity cap — by stop count *or* by per-stop demand
 weight — and its auto-raising of vehicle count in either mode), the
 precedence ("visit X before Y") constraint on both the single-vehicle
@@ -703,16 +802,19 @@ chosen route order (not just the displayed number), and that
 `/api/solve_fleet` assigns every stop to exactly one vehicle even under a
 capacity constraint.
 
-There's also a **6-test frontend suite** (`tests/frontend/`) for the one
-piece of frontend logic that used to have zero coverage — the turn-by-turn
-direction-building/formatting helpers in `static/route_helpers.js`. It
-needs only Node.js 18+ (its built-in test runner, no npm install):
+There's also a **10-test frontend suite** (`tests/frontend/`) for the
+frontend logic that used to have zero coverage — the turn-by-turn
+direction-building/formatting helpers, plus the "Live re-optimize" demo's
+tick-by-tick decision logic (advancing simulated time, picking whether/
+where to inject an incident, phrasing the live feed) — both in
+`static/route_helpers.js`. It needs only Node.js 18+ (its built-in test
+runner, no npm install):
 
 ```
 node --test tests/frontend/*.test.js
 ```
 
-**And a 33-test real-browser layout suite** (`tests/test_layout.py`),
+**And a 36-test real-browser layout suite** (`tests/test_layout.py`),
 added after a real bug shipped through a fully green test suite and
 several rounds of manual screenshots: the topbar had a fixed height
 combined with `flex-wrap`, so on a narrower browser window its second row
@@ -736,7 +838,16 @@ match for an address like "Sukhwani Gracia C" while still surfacing a
 clear message when nothing is found anywhere, and the redesigned info-icon
 tooltip showing/hiding correctly and staying fully on-screen at narrow
 widths — several of these are real bugs this suite caught once during
-development, not just properties it happened to already satisfy). Needs
+development, not just properties it happened to already satisfy). Three of
+these tests exercise the "Live re-optimize" demo end-to-end through a real
+browser against the real running app: the button only enabling after a
+successful solve, a live tick actually logging a real solved cost (not
+just the immediate "started" notice), and clearing points stopping the
+loop and disabling the button — with OSRM and map-tile requests stubbed
+via Playwright's own request interception (the same pattern the search
+tests above already use for Nominatim) rather than needing real network
+access to those external services; `/api/solve` itself is reached at the
+real local `app.py` and is never stubbed. Needs
 Playwright, which — like pytest — is intentionally not in
 `requirements.txt` (dev/CI-only, and the test file skips itself cleanly if
 it's missing rather than failing the rest of the suite):
@@ -821,55 +932,277 @@ one such rule ("visit A before B") and compared:
   minimizing, not checked afterward.
 
 That gap — constraints satisfied by construction vs. bolted on with
-per-rule repair code that still costs real distance — is real,
-reproducible (`python3 src/benchmark.py` regenerates it), and is the
-concrete, measurable technical effect this project's patent description
-should center on: **a routing optimizer in which additional real-world
-dispatch constraints are incorporated as composable penalty terms within a
-single QUBO formulation, guaranteeing constraint satisfaction by
-construction, as compared to a measured tendency of unconstrained
-classical local-search heuristics to violate such constraints and require
-costly post-hoc repair.** That is a "concrete, measurable technical
-effect" in the sense the 2025 CRI patent guidelines require — see the main
-research report for the full patentability discussion.
+per-rule repair code that still costs real distance — is real and
+reproducible (`python3 src/benchmark.py` regenerates it). **Read it as one
+ingredient, though, not the whole patent story:** a February 2026
+peer-reviewed paper (Curuliuc & Leon, in
+`SIH_2026_Patent_Readiness_Research_Heer.docx`) already describes this
+same "constraint as penalty term ⇒ satisfied by construction" mechanism
+for precedence specifically, so on its own this can't anchor a patent
+claim. Experiment 3, next, is where the finding that's actually still open
+gets measured.
+
+**Experiment 2.5 → Experiment 3 (does solving multiple constraint types
+*together* actually matter?):** single-constraint correctness — proven
+above, and by that prior paper — doesn't imply a multi-vehicle dispatch
+DECISION stays valid once a second constraint type enters the picture.
+`src/benchmark.py`'s `run_experiment_3_composed()` takes the same
+fleet-dispatch scenario and solves it three ways through the existing,
+already-tested `solve_multi_vehicle` API: with demand-weighted vehicle
+capacity AND a precedence rule enforced together (**COMPOSED**), with
+capacity enforced but the solver never told about the precedence rule
+(**CAPACITY-ONLY**), and with precedence enforced but the vehicle SPLIT
+itself made without any awareness of demand (**PRECEDENCE-ONLY**). On a
+reproducible 14-trial run:
+
+- **COMPOSED** satisfied both precedence AND capacity in **14/14** trials.
+- **CAPACITY-ONLY** (precedence-blind) happened to violate the precedence
+  rule anyway in **6/14** trials.
+- **PRECEDENCE-ONLY** (demand-blind split) put the two stops on
+  **different vehicles entirely** in 1/14 trials — the split itself became
+  incompatible with the rule, not just costly — and additionally
+  **overloaded a vehicle beyond capacity** in **13/13** of the remaining
+  trials, by as much as **+51.5%** over the limit.
+
+That's the actual remaining, defensible claim: composing constraint types
+into one fleet-dispatch decision — not any single constraint type in
+isolation — is what guarantees the whole result stays valid, and neither
+prior-art finding in the patent-readiness report covers that combination.
+See `output/report.md`'s "Experiment 3" section and
+`tests/test_benchmark.py` for the reproducible, regression-tested version
+of this claim.
+
+## Multi-objective routing — time vs. distance is a real trade-off, not two names for one number
+
+Every route above optimizes for a single number: congested travel time. Real
+dispatch also cares about road distance — a genuine proxy for fuel and
+emissions cost, and one that doesn't move the same way time does once
+congestion enters the picture (a route can be the fastest without being the
+shortest, and vice versa). `src/qubo_tsp.py`'s `combine_objectives()` lets
+the *same* QUBO solver minimize a weighted sum of several cost matrices —
+`objectives=[(W_time, w), (W_distance, 1 - w)]` — with **zero changes** to
+`build_tsp_bqm`/`build_open_path_bqm` themselves, because every QUBO term in
+this project's formulation is already linear in the cost matrix, so a
+weighted sum of matrices is just another cost matrix. `solve_quantum_inspired`
+and `solve_open_path_quantum_inspired` both accept `objectives=` as a direct
+alternative to `W=` (passing both, or neither, is an error), and return an
+`"objective_breakdown"` — the winning tour's cost under each individual
+objective matrix, not just the combined score.
+
+Two things had to be true for this to be a real feature rather than a
+cosmetic knob, and both are checked, not just asserted:
+
+- **Exact equivalence at the extremes.** `objectives=[(W, 1.0)]` must
+  produce a byte-identical tour and cost to plain `W=W`, and
+  `objectives=[(W1, 1.0), (W2, 0.0)]` must exactly recover the `W1`-only
+  solve — not "close," `==`. `tests/test_multi_objective.py` asserts this
+  with `==`, not `pytest.approx`, because that equivalence is the entire
+  reason no change was needed to the QUBO-construction functions.
+- **A genuine trade-off in the underlying problem**, not just in the
+  solver's math. `src/benchmark.py`'s `run_experiment_4_multi_objective()`
+  finds the *true* fastest tour and the *true* shortest tour for random
+  waypoint sets by exhaustive search (`baseline.brute_force_optimal` — no
+  simulated-annealing noise), then measures what optimizing for only one
+  objective actually costs on the other. On a reproducible 12-trial run:
+  optimizing for only one objective provably cost something on the other in
+  **7/12** trials (average +1.0% extra distance / +0.8% extra time when it
+  happened, worst case +1.9% / +2.4%). The other 5 trials happened to tie —
+  reported honestly as ties, not folded into the "diverged" count.
+
+Run `python3 src/benchmark.py` to regenerate `output/experiment_4_multi_objective.csv`
+and the "Experiment 4" section of `output/report.md`; run
+`python3 -m pytest tests/test_multi_objective.py tests/test_benchmark_experiment4.py`
+to re-verify both properties above. **Not yet wired up:** the live app
+(`app.py`) still solves for time only — `objectives=` is implemented and
+tested at the solver/benchmark level, but there's no UI control yet to let a
+user pick a time/distance weighting for a live route.
+
+## Route explainability — why does the route look like this?
+
+A solver that just hands back a list of stop indices leaves the real
+questions unanswered: which leg of the trip is actually costing the most
+time, is a business rule actually being honored (and by how much margin),
+and — if it isn't obviously being honored — what would it have cost to
+enforce it anyway? `src/explain.py` answers these by interpreting an
+already-solved route, not by changing how routes are solved: it adds no new
+solver logic and nothing about `qubo_tsp.py`/`clustering.py` changed for
+this.
+
+- **`explain_path(path, W, ...)`** — a leg-by-leg cost breakdown of any
+  solved path (a single-vehicle open path, or one vehicle's closed
+  depot-loop): each leg's cost and share of the total, the single
+  most-expensive ("bottleneck") leg, and, when a `precedence` list is
+  passed, a per-rule check of whether it's satisfied and at exactly which
+  positions in the route.
+- **`explain_precedence_impact(W, precedence, ...)`** — the per-instance
+  version of what `benchmark.py`'s Experiment 2 measures in aggregate:
+  solves the *same* instance with and without a precedence rule (both via
+  the unchanged `solve_quantum_inspired`) and reports the real extra cost
+  of enforcing it on *this specific* route, not an average across many
+  random trials.
+- **`explain_fleet(result, W, ...)`** — the multi-vehicle version: each
+  vehicle's own leg breakdown, its remaining capacity headroom (when
+  `demands`/`vehicle_capacity` were used for the solve), and which vehicle
+  owns each precedence rule and whether that vehicle's own route satisfies
+  it.
+
+All three are covered by `tests/test_explain.py` (12 tests) — checked
+against independently recomputed totals and percentages, not trusted as a
+black box.
+
+**Already wired into the live app:** both `/api/solve` and
+`/api/solve_fleet` now return an `"explanation"` field built from the route
+they just solved (see `app.py`) — covered by 4 tests in `tests/test_app.py`.
+**Honest gap:** the frontend (`templates/click_router.html`) doesn't render
+this yet — the data reaches the browser in every response, but there's no
+UI panel showing the leg breakdown or bottleneck leg to the user. `explain_precedence_impact`'s before/after comparison also isn't called from either endpoint yet, since it means a second solve (real added latency for a live click) — it's available as a library function and demonstrated in `tests/test_explain.py`, not yet exposed as its own API route.
+
+## Time-window constraints — a partial, honestly-scoped answer, not a solved one
+
+Real dispatch often has a real clock-time requirement — "the pharmacy pickup
+must happen between 9am and 11am." This is the roadmap's highest
+formulation-risk item, and the reason why is structural: `qubo_tsp.py`'s
+QUBO encodes a tour as `x[v, t] = 1` iff waypoint `v` is at tour POSITION
+`t`, not at any particular clock time — and a position-based QUBO has no
+direct way to penalize "arrive after 11:00," because arrival time at
+position `t` isn't a fixed function of `t` alone, it depends on which
+specific edges the eventual tour uses to get there. Encoding TRUE wall-clock
+windows exactly needs a different formulation family (arc-based decision
+variables plus a time-propagation constraint per edge, e.g. an MTZ-style
+scheme) — a genuinely bigger rewrite than this project's other constraint
+additions (precedence, capacity, position windows), and `src/time_windows.py`
+does **not** attempt that rewrite. It does something smaller, real, and
+honestly bounded instead:
+
+- **`derive_position_window(W, window)`** converts a real clock-time window
+  into a tour-POSITION range that's *provably safe* to enforce: reaching
+  position `t` always costs at least the sum of the `t` smallest edges in
+  `W` and at most the sum of the `t` largest (summing any `t` distinct
+  numbers can never beat the globally smallest `t`, or exceed the globally
+  largest `t`) — so any position whose best-case cost already exceeds the
+  window, or whose worst-case cost never reaches it, is mathematically
+  impossible for *any* tour, not just the one eventually found. Excluding
+  only those positions can never discard a solution that could have
+  satisfied the window.
+- **`qubo_tsp.add_position_window_penalty`** enforces that derived range as
+  a hard QUBO constraint — the same mechanism as precedence, wired through
+  a new `position_windows=` parameter on `build_tsp_bqm` /
+  `build_open_path_bqm` / both solve functions (backward compatible: omitted
+  by default, verified via `test_build_tsp_bqm_without_position_windows_is_unchanged`).
+- **`compute_arrival_schedule` + `check_time_windows`** compute the REAL
+  cumulative arrival time of whatever tour the solver actually returns and
+  check it against the requested window — the ground truth this whole
+  module is honest about needing, since the pruning above is necessary but
+  not sufficient.
+- **`solve_with_time_windows(...)`** ties all three together: derive safe
+  bounds, solve with them enforced, verify the real result, and report
+  exactly which windows (if any) are still violated.
+
+**Measured, not just argued (`benchmark.py`'s Experiment 5, 15 trials, each
+window deliberately shifted earlier than where the target waypoint landed
+with no constraint at all, so it's a genuine ask):** without any
+time-awareness, the unconstrained solve happened to satisfy the window in
+**0/15** trials; with position-window pruning enforced, it was satisfied in
+**3/15** trials. **Pruning helps — it never does worse than no time-
+awareness at all (locked in by `test_with_pruning_never_does_worse_than_without_pruning`)
+— but it is not a guarantee**, and the numbers say so plainly: two tours can
+share the same allowed position for the target waypoint while arriving
+there at very different real times, because the position bound only rules
+out placements that could never work for *any* tour, not placements that
+simply didn't pan out for the specific tour found. Run
+`python3 src/benchmark.py` to regenerate `output/experiment_5_time_windows.csv`
+and see the "Experiment 5" section of `output/report.md`; run
+`python3 -m pytest tests/test_time_windows.py tests/test_benchmark_experiment5.py`
+(19 tests) to re-verify the rigor claims and the measured gap above.
+
+**Not yet done:** wired into neither the live app (`app.py`) nor the
+frontend — `time_windows.py` is a library-level feature, demonstrated and
+tested, not yet exposed as its own API endpoint. And, stated plainly
+because it's the honest conclusion of Experiment 5 above: **this is not a
+wall-clock time-window guarantee** — it is real, tested, rigorous pruning
+that measurably helps, with the true reformulation needed for a guarantee
+left as explicit future work rather than something this iteration claims to
+have solved.
 
 ## Real quantum hardware validation (optional, but a strong differentiator)
 
-Every result described above — and everything the live app actually uses
-— solves the QUBO with classical simulated annealing standing in for a
-quantum annealer ("quantum-inspired"). That's an honest and defensible
-foundation, but it's also what almost every other "quantum" SIH project
-does, because it's free and needs no special access.
+Every result described above — and everything the live app uses by
+default — solves the QUBO with classical simulated annealing standing in
+for a quantum annealer ("quantum-inspired"). That's an honest and
+defensible foundation, but it's also what almost every other "quantum" SIH
+project does, because it's free and needs no special access.
 
-`run_on_real_quantum_hardware.py` takes the exact same QUBO
-(`qubo_tsp.build_open_path_bqm` — the fixed-start/fixed-end formulation
-the live app uses) and submits it to an actual D-Wave quantum annealer via
-a free Leap cloud account, then prints/saves a side-by-side comparison
-against brute-force-optimal, classical 2-opt, and the simulated-annealing
-version. It needs a one-time free signup (no credit card) and `pip install
-dwave-system` — full steps are in the script's own docstring. This is a
-pitch-deck artifact (a real QPU chip ID, a real hardware timing number, a
-real hardware result), not part of the live demo's normal code path — run
-it once, save `output/real_quantum_hardware_result.md`, and quote or
-screenshot it when a judge asks "is this actually quantum, or just named
-that."
+`src/qpu_solver.py` makes a real D-Wave quantum annealer a **first-class
+solver mode**, not a one-off side script: `method="qpu"` now works
+everywhere `method="quantum"` and `method="classical"` already do —
+`clustering.solve_open_path_scalable`, `clustering.solve_multi_vehicle`,
+and both live API endpoints (`/api/solve`, `/api/solve_fleet` — see
+`openapi.yaml`'s `method` enum). Every `"qpu"` call builds the IDENTICAL
+BQM `"quantum"` builds (`qubo_tsp.build_tsp_bqm` / `build_open_path_bqm` —
+same objective, same precedence/position-window support) and submits it to
+`dwave.system.EmbeddingComposite(DWaveSampler())` instead of classically
+simulating one. `run_on_real_quantum_hardware.py` now calls into this same
+module too, rather than keeping its own separate hardware-submission logic
+to duplicate and drift.
 
 **This is the one item in the "10/10" punch list that genuinely can't be
-done for you** — running it needs *your* D-Wave Leap account and API
-token, which no one else can supply. It's 5 minutes, though:
+done for you** — actually running on hardware needs *your* D-Wave Leap
+account and API token, which no one else can supply. It's 5 minutes,
+though:
 
 1. Sign up free at <https://cloud.dwavesys.com/leap/> (no credit card).
-2. `pip install dwave-system`
+2. `pip install dwave-system` (deliberately NOT in `requirements.txt` —
+   see the comment there — since it's the one dependency this project
+   doesn't need unless you want real hardware).
 3. Grab your API token from the Leap dashboard (top right, "API Token"),
    then: `export DWAVE_API_TOKEN="your-token-here"`
-4. `python3 run_on_real_quantum_hardware.py`
+4. Either `python3 run_on_real_quantum_hardware.py` for the pitch-deck
+   artifact (a comparison table + `output/real_quantum_hardware_result.md`,
+   quote or screenshot it when a judge asks "is this actually quantum, or
+   just named that"), or pass `"method": "qpu"` to `/api/solve` /
+   `/api/solve_fleet` for a live, real-hardware-backed solve in the app
+   itself.
 
-That's it — it prints the comparison table to your terminal and writes
-`output/real_quantum_hardware_result.md`, ready to paste straight into a
-slide or screenshot. The script already handles both graceful-failure
-paths (no `dwave-system` installed, or no/invalid token) with a clear
-message rather than a stack trace, so there's nothing to debug — if it
-doesn't print a QPU chip ID, the printed message says exactly why.
+**Without a token configured** (this project's default, and this
+sandbox's own actual state while building this feature — the failure
+below is real, not simulated for documentation purposes), selecting
+`method="qpu"` fails with a clear, caught error rather than a crash —
+`dwave-system`'s own `"API token not defined"` surfaces as a clean HTTP
+400 from the live app, or a plain printed message from the script. Nothing
+silently falls back to simulated annealing and pretends it ran on
+hardware.
+
+**Real hardware has real limits this project is upfront about.** A QPU
+chip has a fixed qubit count and a sparse physical connectivity graph,
+unlike a classical simulator's "as many variables as fit in RAM" — this
+project's QUBO couples every waypoint pair (fully connected), which real
+hardware has to embed onto its sparser graph. `qpu_solver.py` enforces a
+conservative `MAX_QPU_INTERIOR_STOPS` cap (8) and raises a clear error
+above it — a documented, honest guess at "small enough to be worth
+trying" rather than a verified guarantee, since actual embeddability isn't
+something this project can check without hardware access. A larger
+`/api/solve` request that needs multiple clusters (see "Scaling past a
+dozen stops" below) with `method="qpu"` submits ONE REAL hardware job per
+cluster — genuinely real each time, but worth knowing before pointing a
+30-stop request at your monthly QPU-second allotment.
+
+**Tested without needing hardware or a token** (`tests/test_qpu_solver.py`,
+11 tests, plus 2 in `tests/test_app.py`): every solve function accepts an
+optional `sampler=` override used only by tests to inject a lightweight
+stand-in exposing the same `.sample(bqm, num_reads=...)` interface real
+D-Wave samplers do (dwave-samplers' own `SimulatedAnnealingSampler`, which
+already speaks that interface) — this verifies the actual wiring (decode,
+best-feasible-read selection, precedence/position-window filtering, the
+size cap) is correct, the same way a payment integration's request-
+building logic gets tested without an actual real charge. The "no
+credentials configured" failure path is tested for real, unmocked, since
+this sandbox genuinely has no token.
+
+**Honest gap:** the frontend (`templates/click_router.html`) doesn't offer
+`"qpu"` as a selectable method yet — its method dropdown still only shows
+"classical" and "quantum" (simulated annealing). `method="qpu"` reaches
+the API and works end to end (curl it, or use `run_on_real_quantum_hardware.py`),
+it just isn't wired into that UI control yet.
 
 ## A second quantum computing paradigm: QAOA (optional, no account needed)
 
@@ -940,6 +1273,17 @@ never claim a number the benchmark script and test suite don't actually
 produce. Re-run both commands any time the benchmark, feature set, or test
 count changes, and the deck regenerates in sync rather than going stale.
 
+**Honest gap:** `generate_pitch_deck.js` doesn't have Experiment 3, 4, or 5
+slides yet — it still only reads the two original CSVs. The
+composed-constraint numbers are real and in `output/experiment_3_composed.csv`,
+the time-vs-distance trade-off numbers are real and in
+`output/experiment_4_multi_objective.csv`, and the time-window
+pruning-effectiveness numbers are real and in
+`output/experiment_5_time_windows.csv`, but all three are currently
+something you'd add to the deck by hand (or ask for slides to be generated
+from those CSVs the same way) rather than something the script produces
+automatically.
+
 ## How to pitch this at your internal round / to SIH judges
 
 Lead with Experiment 2, not Experiment 1. The narrative: *"Off-the-shelf
@@ -966,33 +1310,70 @@ community (D-Wave, IBM Qiskit optimization) is targeting for future
 hardware acceleration — so this isn't a dead-end classical trick, it's
 positioned on that trajectory.
 
+If the follow-up question is sharper — "isn't 'encode a constraint as a
+penalty term' already known?" — that's exactly right, and Experiment 3
+is the answer, not Experiment 2: single-constraint correctness is known
+prior art (say so, don't dodge it — see the prior-art memo). What isn't
+covered is that composing multiple constraint types into one live
+fleet-dispatch decision is what keeps the WHOLE result valid — Experiment
+3 measures a demand-blind split overloading a vehicle in effectively every
+trial where a precedence-blind solve would have gotten it right. That's a
+stronger, more specific answer than repeating the Experiment 2 numbers
+again.
+
 ## Extending this before the real pitch
 
-- **More constraint types**: precedence ("visit X before Y"), multiple
-  vehicles, and real per-stop demand weights (capacity in actual load, not
-  just stop count) are all already live (see the interface-redesign list
-  above, `add_precedence_penalty()` / `build_open_path_bqm`'s `precedence`
-  param in `qubo_tsp.py`, and `demands`/`vehicle_capacity` in
-  `solve_multi_vehicle`) — true numeric time windows are the natural next
-  penalty-term function to add alongside them, same pattern, same BQM.
+Several items that used to be listed here as "the natural next step" are
+now actually built — said honestly, because half the value of a list like
+this is knowing which half is done:
+
+- **More constraint types** — precedence ("visit X before Y"), multiple
+  vehicles, real per-stop demand weights, a second optimization objective
+  (time vs. distance — see "Multi-objective routing"), and real numeric
+  time-window penalties (see "Time-window constraints") are all live,
+  tested, and wired into the QUBO. What's NOT done: enforcing precedence
+  or time windows across cluster boundaries once a problem is large enough
+  to need `clustering.py`'s split-and-stitch (both are scoped, in their
+  own sections above, to "within a single QUBO's stop count").
+- **Real quantum hardware** — `src/qpu_solver.py` submits the SAME BQM to
+  a real D-Wave QPU via `method="qpu"`, a first-class option everywhere
+  `method="quantum"`/`"classical"` already work (see "Real quantum
+  hardware validation"). What's NOT done, because it can't be from here:
+  actually running it, which needs your own free D-Wave Leap account and
+  API token — this sandbox has neither, so the wiring is tested via a
+  dependency-injected stand-in sampler and this sandbox's own real,
+  unmocked "no token configured" failure, not a live hardware run.
+- **Real live traffic** — `src/traffic_provider.py`'s
+  `GoogleRoutesTrafficProvider` is a real, working integration with
+  Google's Routes API (see "Traffic-awareness"). What's NOT done: running
+  it live, same reason as the QPU above (needs your own
+  `GOOGLE_ROUTES_API_KEY` and Google Cloud billing setup) — AND the
+  UVH-26 vehicle-density-calibration path below, which is a genuinely
+  different, still-open idea (calibrating the *simulated* model from real
+  images, rather than replacing it with a live API).
+- **Continuous re-optimization** — the "Live re-optimize" topbar toggle
+  (see "Continuous re-optimization") repeatedly re-solves against a
+  simulated clock, not a real live feed. What's NOT done: fleet-mode
+  support, and anything resembling a real vehicle's live GPS position
+  feeding back into the loop (there is no real vehicle here to track).
 - **Using real map data**: `src/city_graph.py` has `build_live_osm_graph()`
   using `osmnx` to pull an actual OpenStreetMap road network for any place
   name — swap it in for `build_demo_graph()` once you've confirmed your
   venue has reliable internet (Overpass API calls can be slow/rate-limited,
-  which is exactly why the offline demo graph is the default).
-- **Real congestion data**: `src/congestion.py`'s synthetic rush-hour model
-  is a placeholder. IISc's **UVH-26** dataset
+  which is exactly why the offline demo graph is the default). Note this
+  is a DIFFERENT layer than `TRAFFIC_PROVIDER`: this is road *geometry*,
+  that's *congestion* on top of it.
+- **Calibrating congestion from real imagery**: `src/congestion.py`'s
+  synthetic rush-hour model is still a placeholder in its own right (a
+  separate, still-open idea from the `google_routes` live-API path above
+  — this one calibrates the SIMULATED model's numbers rather than
+  replacing it). IISc's **UVH-26** dataset
   (https://huggingface.co/datasets/iisc-aim/UVH-26) — 26,646 annotated
   Bengaluru traffic-camera images across 2,800 CCTV cameras, released
   November 2025 — is a strong, free, real-Indian-data source: running a
   vehicle-density pass on even a handful of its images to calibrate a few
   junctions' congestion multipliers would meaningfully strengthen the "real
-  data" story in your pitch.
-- **Real quantum hardware**: swap `SimulatedAnnealingSampler` for a real
-  D-Wave `EmbeddingComposite(DWaveSampler())` (needs a D-Wave Leap account,
-  free tier available) once problem sizes grow beyond what classical
-  annealing handles comfortably — the QUBO you've already built
-  (`build_tsp_bqm`) needs no changes to run on it.
+  data" story in your pitch. Nobody has done this yet in this project.
 
 ## Patent note
 

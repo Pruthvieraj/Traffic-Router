@@ -16,6 +16,13 @@ real D-Wave quantum annealer, so you can show judges an actual QPU chip
 ID, an actual hardware annealing time, and a real hardware result sitting
 next to the classical one — independently checkable, not just claimed.
 
+This script is now a thin demo/report wrapper around
+`src/qpu_solver.solve_open_path_on_qpu` — the SAME function
+`method="qpu"` uses everywhere else in this project (the live app via
+`clustering.solve_open_path_scalable` / `solve_multi_vehicle`), so a real
+QPU is a first-class solver mode here, not a one-off script with its own
+separate hardware-submission logic to keep in sync.
+
 WHAT THIS NEEDS THAT NOTHING ELSE HERE DOES: a free D-Wave Leap account.
 This is NOT required to run app.py, main.py, or anything else in this
 project — it's a one-time credibility artifact for your pitch deck, run
@@ -28,7 +35,7 @@ SETUP (one-time, a few minutes):
      in seconds, because real quantum hardware time is scarce/expensive.
      This script's settings (100 reads on a ~9-variable problem) use a
      tiny fraction of a typical allotment.
-  2. Install the SDK (only needed for this script):
+  2. Install the SDK (only needed for this script and method="qpu"):
          pip install dwave-system
   3. Get your API token from the Leap dashboard (top right, "API Token"),
      then either run the interactive setup:
@@ -48,17 +55,15 @@ screenshotted directly in your pitch deck.
 import itertools
 import os
 import sys
-import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from city_graph import build_demo_graph  # noqa: E402
 from congestion import apply_congestion  # noqa: E402
 from distance_matrix import build_travel_time_matrix  # noqa: E402
-from qubo_tsp import (  # noqa: E402
-    build_open_path_bqm, _decode_open_path, open_path_length, solve_open_path_quantum_inspired,
-)
+from qubo_tsp import open_path_length, solve_open_path_quantum_inspired  # noqa: E402
 from baseline import nearest_neighbor_2opt_open_path  # noqa: E402
+from qpu_solver import solve_open_path_on_qpu, QPU_AVAILABLE  # noqa: E402
 
 # A small, fixed, reproducible example — 3 "middle" stops means only 9
 # binary variables in the QUBO, tiny by QPU standards, embeds easily, and
@@ -101,54 +106,35 @@ def main():
           f"({sa_result['cost']:.1f} min, {sa_result['wall_seconds']*1000:.1f} ms)")
 
     print("\nConnecting to a real D-Wave quantum annealer (needs your Leap API token)...")
-    try:
-        from dwave.system import DWaveSampler, EmbeddingComposite
-    except ImportError:
+    if not QPU_AVAILABLE:
         print("\ndwave-system isn't installed. Run:  pip install dwave-system")
         print("(See this script's docstring for the full one-time setup.)")
         return
 
     try:
-        qpu = DWaveSampler()
+        qpu_result = solve_open_path_on_qpu(W, start_idx, end_idx, num_reads=100)
     except Exception as e:
-        print(f"\nCouldn't connect to a D-Wave QPU: {e}")
+        print(f"\nCouldn't get a result from a real D-Wave QPU: {e}")
         print("Check that your API token is set — see this script's docstring for setup steps.")
         return
 
-    chip_id = qpu.properties.get("chip_id", "unknown chip")
-    print(f"Connected to real QPU: {chip_id}")
-    sampler = EmbeddingComposite(qpu)
+    print(f"Connected to real QPU: {qpu_result['chip_id']}")
 
-    bqm = build_open_path_bqm(W, start_idx, end_idx)
-    n = W.shape[0]
-    middle = [v for v in range(n) if v not in (start_idx, end_idx)]
+    best_path, best_cost = qpu_result["path"], qpu_result["cost"]
+    feasible_count = qpu_result["feasible_reads"]
+    qpu_access_us = qpu_result["qpu_access_time_us"]
+    chip_id = qpu_result["chip_id"]
 
-    t0 = time.perf_counter()
-    sampleset = sampler.sample(bqm, num_reads=100, label="SIH2026 Quantum-Inspired Traffic Router")
-    wall_seconds = time.perf_counter() - t0
-
-    best_path, best_cost, feasible_count = None, float("inf"), 0
-    for sample, _energy in sampleset.data(fields=["sample", "energy"]):
-        path = _decode_open_path(sample, n, start_idx, end_idx, middle)
-        if path is None:
-            continue
-        feasible_count += 1
-        cost = open_path_length(path, W)
-        if cost < best_cost:
-            best_path, best_cost = path, cost
-
-    qpu_access_us = sampleset.info.get("timing", {}).get("qpu_access_time")
+    matches_optimal = best_path is not None and abs(best_cost - bf_cost) < 1e-6
     print("\nREAL QPU RESULT:          ", end="")
     if best_path is None:
         print("no feasible sample in 100 reads (rare on a problem this small — try rerunning).")
     else:
         print(f"{[WAYPOINTS[i] for i in best_path]}  ({best_cost:.1f} min)")
-    print(f"Feasible reads: {feasible_count}/100 | wall time (incl. network+queue): {wall_seconds*1000:.0f} ms")
+    print(f"Feasible reads: {feasible_count}/100 | wall time (incl. network+queue): {qpu_result['wall_seconds']*1000:.0f} ms")
     if qpu_access_us:
         print(f"Actual QPU hardware time billed: {qpu_access_us/1000:.2f} ms "
               f"(out of your free monthly allotment)")
-
-    matches_optimal = best_path is not None and abs(best_cost - bf_cost) < 1e-6
 
     os.makedirs("output", exist_ok=True)
     with open("output/real_quantum_hardware_result.md", "w") as f:
@@ -166,9 +152,11 @@ def main():
             f.write(f"\nActual QPU hardware time: {qpu_access_us/1000:.2f} ms\n")
         f.write(f"\nReal QPU found the optimal solution: "
                 f"{'YES' if matches_optimal else 'not on this particular run — annealing is probabilistic, rerunning often finds it'}\n")
-        f.write("\n_This solves the exact same `build_open_path_bqm` QUBO the live app uses — "
-                "the only thing that changes here is which sampler solves it: classical simulated "
-                "annealing vs. a physical D-Wave quantum annealer._\n")
+        f.write("\n_This solves the exact same `build_open_path_bqm` QUBO the live app uses via "
+                "`src/qpu_solver.solve_open_path_on_qpu` — the same function `method=\"qpu\"` calls "
+                "everywhere else in this project (see README.md's \"Real quantum hardware "
+                "validation\" section) — the only thing that changes here is which sampler solves "
+                "it: classical simulated annealing vs. a physical D-Wave quantum annealer._\n")
 
     print("\nWrote output/real_quantum_hardware_result.md — quote or screenshot this in your pitch.")
 

@@ -11,7 +11,10 @@ Produces, in ./output/:
     - comparison_chart.png              Experiment 1 bar chart
     - experiment_1_unconstrained.csv    raw numbers, plain routing
     - experiment_2_constrained.csv      raw numbers, routing with a rule
-    - report.md                         human-readable summary of both,
+    - experiment_3_composed.csv         raw numbers, composed multi-constraint fleet dispatch
+    - experiment_4_multi_objective.csv  raw numbers, time-vs-distance trade-off
+    - experiment_5_time_windows.csv     raw numbers, time-window position-pruning effectiveness
+    - report.md                         human-readable summary of all five,
                                          written honestly (see benchmark.py)
 
 Everything runs offline against the bundled demo road network
@@ -29,7 +32,10 @@ from congestion import apply_congestion
 from distance_matrix import build_travel_time_matrix
 from qubo_tsp import solve_quantum_inspired
 from baseline import nearest_neighbor_2opt
-from benchmark import run_experiment_1_unconstrained, run_experiment_2_constrained, summarize_and_save
+from benchmark import (
+    run_experiment_1_unconstrained, run_experiment_2_constrained, run_experiment_3_composed,
+    run_experiment_4_multi_objective, run_experiment_5_time_windows, summarize_and_save,
+)
 from visualize import render_route_map, render_comparison_chart, render_constraint_chart
 from build_multi_city_map import build_multi_city_map
 
@@ -88,17 +94,45 @@ def run_benchmarks() -> None:
     print(f"Plain 2-opt violated the constraint in {n_violated}/{len(rows2)} trials")
     print(f"QUBO+SA satisfied the constraint by construction in {n_valid}/{len(rows2)} trials")
 
-    section("5. Writing report + charts to ./output/")
-    summary = summarize_and_save(rows1, rows2, out_dir=OUTPUT_DIR)
+    section("5. Benchmark — Experiment 3: does solving constraints TOGETHER matter?")
+    rows3 = run_experiment_3_composed()
+    n3 = len(rows3)
+    composed_both_ok = sum(1 for r in rows3 if r["composed_precedence_ok"] and r["composed_capacity_ok"])
+    print(f"COMPOSED satisfied both precedence AND capacity in {composed_both_ok}/{n3} trials")
+    print(f"CAPACITY-ONLY (precedence-blind) got lucky on precedence in "
+          f"{sum(1 for r in rows3 if r['capacity_only_precedence_ok_by_luck'])}/{n3} trials")
+    print(f"PRECEDENCE-ONLY (demand-blind split) stayed within capacity by luck in "
+          f"{sum(1 for r in rows3 if r['precedence_only_capacity_ok_by_luck'])}/{n3} trials")
+
+    section("6. Benchmark — Experiment 4: is \"multi-objective\" (time vs. distance) a real trade-off?")
+    rows4 = run_experiment_4_multi_objective()
+    n4 = len(rows4)
+    n_diverge = sum(1 for r in rows4 if r["objectives_diverge"])
+    print(f"Optimizing for only one objective (time OR distance) provably cost something on the "
+          f"other in {n_diverge}/{n4} trials (exact brute-force search, no solver noise)")
+
+    section("7. Benchmark — Experiment 5: does time-window position-pruning actually help?")
+    rows5 = run_experiment_5_time_windows()
+    n5 = len(rows5)
+    without_ok = sum(1 for r in rows5 if r["without_pruning_satisfied"])
+    with_ok = sum(1 for r in rows5 if r["with_pruning_satisfied"])
+    print(f"Without time-window pruning, the requested window was satisfied in {without_ok}/{n5} trials")
+    print(f"With time-window pruning, the requested window was satisfied in {with_ok}/{n5} trials "
+          f"(helps, but is not a guarantee — see report.md)")
+
+    section("8. Writing report + charts to ./output/")
+    summary = summarize_and_save(rows1, rows2, rows3, out_dir=OUTPUT_DIR, rows4=rows4, rows5=rows5)
     with open(os.path.join(OUTPUT_DIR, "report.md"), "w") as f:
         f.write(summary)
     render_comparison_chart(rows1, os.path.join(OUTPUT_DIR, "comparison_chart.png"))
     render_constraint_chart(rows2, os.path.join(OUTPUT_DIR, "constraint_chart.png"))
-    print("Wrote: report.md, comparison_chart.png, constraint_chart.png, experiment_1_unconstrained.csv, experiment_2_constrained.csv")
+    print("Wrote: report.md, comparison_chart.png, constraint_chart.png, experiment_1_unconstrained.csv, "
+          "experiment_2_constrained.csv, experiment_3_composed.csv, experiment_4_multi_objective.csv, "
+          "experiment_5_time_windows.csv")
 
 
 def run_multi_city_map() -> None:
-    section("6. Building the multi-city interactive map (satellite toggle + city dropdown)")
+    section("9. Building the multi-city interactive map (satellite toggle + city dropdown)")
     out_path = os.path.join(OUTPUT_DIR, "multi_city_map.html")
     build_multi_city_map(out_path)
     print(f"Wrote: {out_path}")

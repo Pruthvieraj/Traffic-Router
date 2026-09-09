@@ -54,7 +54,10 @@ def _var(v: int, t: int, n: int) -> int:
     return v * n + t
 
 
-def build_tsp_bqm(W: np.ndarray, precedence: list[tuple[int, int]] | None = None) -> dimod.BinaryQuadraticModel:
+def build_tsp_bqm(
+    W: np.ndarray, precedence: list[tuple[int, int]] | None = None,
+    position_windows: dict[int, tuple[int, int]] | None = None,
+) -> dimod.BinaryQuadraticModel:
     """Build the TSP QUBO, as a dimod BinaryQuadraticModel, for travel-time
     matrix W (shape N x N, symmetric, zero diagonal).
 
@@ -68,6 +71,14 @@ def build_tsp_bqm(W: np.ndarray, precedence: list[tuple[int, int]] | None = None
     rather than claiming raw speed/quality superiority on the plain
     unconstrained problem (see benchmark.py, which reports both stories
     truthfully).
+
+    `position_windows`: optional {waypoint_index: (t_min, t_max)} map, each
+    an inclusive TOUR-POSITION range (0..n-1) that waypoint may occupy —
+    the order-based building block time_windows.py uses to approximate
+    real wall-clock time windows (see that module's docstring for the full
+    honest story on why this formulation can only PRUNE provably-infeasible
+    positions, not guarantee wall-clock satisfaction directly). Enforced by
+    construction exactly like precedence — see add_position_window_penalty.
     """
     n = W.shape[0]
     A = PENALTY_SAFETY_FACTOR * n * W.max()
@@ -104,7 +115,30 @@ def build_tsp_bqm(W: np.ndarray, precedence: list[tuple[int, int]] | None = None
         for (u, v) in precedence:
             add_precedence_penalty(bqm, u, v, n, penalty=A)
 
+    # --- optional constraint (d): position windows ---
+    if position_windows:
+        for v, (t_min, t_max) in position_windows.items():
+            add_position_window_penalty(bqm, v, t_min, t_max, n, penalty=A)
+
     return bqm
+
+
+def add_position_window_penalty(
+    bqm: dimod.BinaryQuadraticModel, v: int, t_min: int, t_max: int, n: int, penalty: float,
+    positions: list[int] | None = None,
+) -> None:
+    """Add a linear penalty discouraging waypoint v from being placed at any
+    tour position outside the inclusive range [t_min, t_max] (or outside
+    `positions`, when given directly — used by build_open_path_bqm to
+    restrict to interior positions only). Since x[v, t] is already a
+    decision variable, "don't place v at position t" is just a positive
+    linear cost on that one variable — no quadratic term needed, unlike
+    precedence (which relates TWO waypoints' positions to each other).
+    """
+    allowed = set(positions) if positions is not None else set(range(n))
+    for t in allowed:
+        if t < t_min or t > t_max:
+            bqm.add_linear(_var(v, t, n), penalty)
 
 
 def add_precedence_penalty(bqm: dimod.BinaryQuadraticModel, u: int, v: int, n: int, penalty: float) -> None:
@@ -141,6 +175,45 @@ def _decode_sample(sample: dict, n: int) -> list[int] | None:
     return tour
 
 
+def combine_objectives(objectives: list[tuple[np.ndarray, float]]) -> np.ndarray:
+    """Weighted-sum scalarization: combine multiple same-shape cost
+    matrices into one, `sum(weight * matrix)`. This is the standard way a
+    multi-objective combinatorial optimization problem gets reduced to a
+    single-objective one, and it requires ZERO change to the QUBO
+    construction above — every objective term in build_tsp_bqm /
+    build_open_path_bqm is already linear in the edge-weight matrix (see
+    their docstrings' "Objective" line), so a weighted combination of
+    several objectives is just another edge-weight matrix, solved by the
+    exact same, already-tested solver. This is also why the classical
+    2-opt baseline (baseline.py) is multi-objective-capable for free —
+    `nearest_neighbor_2opt(combine_objectives(...))` needs no changes to
+    baseline.py at all.
+
+    `objectives`: a list of (matrix, weight) pairs, all the same (N, N)
+    shape — e.g. `[(time_matrix, 0.6), (distance_matrix, 0.4)]` to weight
+    travel time 60% and road distance (a fuel/emissions proxy) 40%.
+    Weights are NOT required to sum to 1 — pass whatever relative
+    weighting matters for the tradeoff; only the ratio between them
+    affects which tour is chosen. Weights of 0.0 are allowed (useful for
+    sweeping a Pareto front — see benchmark.py's
+    `run_experiment_4_multi_objective`).
+
+    HONEST SCOPE: weighted-sum scalarization is guaranteed to find only
+    Pareto-optimal points on the CONVEX part of the true Pareto front — a
+    well-known limitation for genuinely non-convex fronts, not something
+    specific to this project. See run_experiment_4_multi_objective's own
+    docstring for how that's handled honestly (report what sweeping actual
+    weights finds, not a claim of complete Pareto coverage).
+    """
+    if not objectives:
+        raise ValueError("objectives must be a non-empty list of (matrix, weight) pairs.")
+    combined = None
+    for matrix, weight in objectives:
+        term = weight * np.asarray(matrix, dtype=float)
+        combined = term if combined is None else combined + term
+    return combined
+
+
 def tour_length(tour: list[int], W: np.ndarray) -> float:
     n = len(tour)
     return sum(W[tour[t], tour[(t + 1) % n]] for t in range(n))
@@ -152,20 +225,56 @@ def satisfies_precedence(tour: list[int], precedence: list[tuple[int, int]]) -> 
     return all(position[u] < position[v] for u, v in precedence)
 
 
+def satisfies_position_windows(tour: list[int], position_windows: dict[int, tuple[int, int]]) -> bool:
+    """True iff, for every waypoint with a requested (t_min, t_max) tour-
+    position range, it actually occupies a position inside that range in
+    `tour` — the same kind of checked fact for position_windows that
+    satisfies_precedence is for precedence."""
+    position = {city: idx for idx, city in enumerate(tour)}
+    return all(
+        v in position and t_min <= position[v] <= t_max
+        for v, (t_min, t_max) in position_windows.items()
+    )
+
+
 def solve_quantum_inspired(
-    W: np.ndarray,
+    W: np.ndarray | None = None,
     num_reads: int = 500,
     seed: int = 1,
     precedence: list[tuple[int, int]] | None = None,
     num_sweeps: int | None = None,
+    objectives: list[tuple[np.ndarray, float]] | None = None,
+    position_windows: dict[int, tuple[int, int]] | None = None,
 ) -> dict:
     """Solve the TSP via QUBO + classical simulated annealing (the
     'quantum-inspired' solver).
 
+    Pass EITHER `W` (a single cost matrix — the original, still-default
+    contract, unchanged) OR `objectives` (a list of (matrix, weight) pairs
+    for multi-objective routing — see combine_objectives). Passing both or
+    neither is an error.
+
+    `position_windows`: optional {waypoint_index: (t_min, t_max)} tour-
+    position range constraints — see build_tsp_bqm and time_windows.py.
+    Prefer time_windows.solve_with_time_windows() over passing this
+    directly unless you already have exact tour-position bounds in hand;
+    that module derives them rigorously from real clock-time windows.
+
     Returns a dict: {tour, cost, wall_seconds, feasible_reads, total_reads}
+    — `cost` is the tour's length under whichever single matrix was
+    actually optimized (W, or the weighted-sum combination of
+    `objectives`). When `objectives` was used, an additional
+    `objective_breakdown` field lists each objective's own real value for
+    the chosen tour, in the same order `objectives` was given, so a
+    multi-objective result is never just a single blended number with no
+    way to see the actual trade-off it represents.
     """
-    n = W.shape[0]
-    bqm = build_tsp_bqm(W, precedence=precedence)
+    if (W is None) == (objectives is None):
+        raise ValueError("Pass exactly one of W or objectives, not both and not neither.")
+    W_eff = combine_objectives(objectives) if objectives is not None else W
+
+    n = W_eff.shape[0]
+    bqm = build_tsp_bqm(W_eff, precedence=precedence, position_windows=position_windows)
     sampler = SimulatedAnnealingSampler()
 
     t0 = time.perf_counter()
@@ -175,30 +284,55 @@ def solve_quantum_inspired(
     sampleset = sampler.sample(bqm, **sample_kwargs)
     wall_seconds = time.perf_counter() - t0
 
+    # Prefer the best feasible (valid-permutation) read that ALSO satisfies
+    # every requested precedence/position_window constraint — the penalty
+    # weight makes violating either extremely costly, so in practice the
+    # lowest-energy feasible reads already satisfy both, but this makes
+    # that a checked guarantee rather than an assumption (see
+    # solve_open_path_quantum_inspired's identical pattern below).
+    # best_tour_any tracks the best feasible read regardless, as a
+    # last-resort fallback if every feasible read violated a constraint.
     best_tour, best_cost, feasible_count = None, float("inf"), 0
+    best_tour_any, best_cost_any = None, float("inf")
     for sample, energy in sampleset.data(fields=["sample", "energy"]):
         tour = _decode_sample(sample, n)
         if tour is None:
             continue
         feasible_count += 1
-        cost = tour_length(tour, W)
+        cost = tour_length(tour, W_eff)
+        if cost < best_cost_any:
+            best_tour_any, best_cost_any = tour, cost
+        if precedence and not satisfies_precedence(tour, precedence):
+            continue
+        if position_windows and not satisfies_position_windows(tour, position_windows):
+            continue
         if cost < best_cost:
             best_tour, best_cost = tour, cost
+
+    if best_tour is None and best_tour_any is not None:
+        # Every feasible read violated a constraint — extremely unlikely
+        # given the penalty weight, but fall back to the best feasible read
+        # rather than dropping into the greedy repair below, which doesn't
+        # know about either constraint at all.
+        best_tour, best_cost = best_tour_any, best_cost_any
 
     if best_tour is None:
         # Extremely unlikely with a properly-weighted penalty, but fall back
         # to a greedy repair of the single lowest-energy sample so the demo
         # never crashes mid-pitch.
         best_tour = _greedy_repair(next(iter(sampleset.samples())), n)
-        best_cost = tour_length(best_tour, W)
+        best_cost = tour_length(best_tour, W_eff)
 
-    return {
+    result = {
         "tour": best_tour,
         "cost": best_cost,
         "wall_seconds": wall_seconds,
         "feasible_reads": feasible_count,
         "total_reads": num_reads,
     }
+    if objectives is not None:
+        result["objective_breakdown"] = [tour_length(best_tour, matrix) for matrix, _ in objectives]
+    return result
 
 
 def _greedy_repair(sample: dict, n: int) -> list[int]:
@@ -233,6 +367,7 @@ def open_path_length(path: list[int], W: np.ndarray) -> float:
 
 def build_open_path_bqm(
     W: np.ndarray, start_idx: int, end_idx: int, precedence: list[tuple[int, int]] | None = None,
+    position_windows: dict[int, tuple[int, int]] | None = None,
 ) -> dimod.BinaryQuadraticModel | None:
     """QUBO for 'shortest path visiting every waypoint exactly once, from a
     FIXED start to a FIXED end' (a Hamiltonian path, not a cycle) — used
@@ -313,6 +448,20 @@ def build_open_path_bqm(
                 continue
             _add_open_path_precedence_penalty(bqm, u, v, n, penalty=A)
 
+    # optional constraint: position windows among interior stops only —
+    # positions 0 and n-1 belong to the fixed start/end and were never
+    # given decision variables, so a window is clamped into 1..n-2 here
+    # (time_windows.py's derive_position_window already does this clamping
+    # too; this clamp is a second, cheap safety net, not the only guard).
+    if position_windows:
+        interior_positions = list(range(1, n - 1))
+        for v, (t_min, t_max) in position_windows.items():
+            if v in (start_idx, end_idx):
+                continue
+            add_position_window_penalty(
+                bqm, v, max(t_min, 1), min(t_max, n - 2), n, penalty=A, positions=interior_positions,
+            )
+
     return bqm
 
 
@@ -348,35 +497,55 @@ def _decode_open_path(sample: dict, n: int, start_idx: int, end_idx: int, middle
 
 
 def solve_open_path_quantum_inspired(
-    W: np.ndarray, start_idx: int, end_idx: int, num_reads: int = 400, seed: int = 1,
+    W: np.ndarray | None = None, start_idx: int = 0, end_idx: int = 0, num_reads: int = 400, seed: int = 1,
     precedence: list[tuple[int, int]] | None = None,
+    objectives: list[tuple[np.ndarray, float]] | None = None,
+    position_windows: dict[int, tuple[int, int]] | None = None,
 ) -> dict:
     """Solve the fixed-start/fixed-end routing problem via QUBO + simulated
     annealing. Mirrors solve_quantum_inspired()'s return shape.
 
     `precedence`: see build_open_path_bqm — optional "u before v" pairs
     baked directly into the same QUBO, same as the closed-loop solver.
+
+    `position_windows`: see build_open_path_bqm / time_windows.py — optional
+    {waypoint_index: (t_min, t_max)} interior-position range constraints.
+
+    Pass EITHER `W` (a single cost matrix, the original contract) OR
+    `objectives` (a list of (matrix, weight) pairs — see
+    qubo_tsp.combine_objectives / solve_quantum_inspired's own multi-
+    objective docs, which apply identically here). When `objectives` is
+    used, the returned dict gains an `objective_breakdown` field with each
+    objective's real value for the chosen path.
     """
-    n = W.shape[0]
+    if (W is None) == (objectives is None):
+        raise ValueError("Pass exactly one of W or objectives, not both and not neither.")
+    W_eff = combine_objectives(objectives) if objectives is not None else W
+
+    n = W_eff.shape[0]
     middle = [v for v in range(n) if v not in (start_idx, end_idx)]
 
     if not middle:
         path = [start_idx, end_idx]
-        return {"path": path, "cost": open_path_length(path, W), "wall_seconds": 0.0,
-                "feasible_reads": 1, "total_reads": 1}
+        result = {"path": path, "cost": open_path_length(path, W_eff), "wall_seconds": 0.0,
+                  "feasible_reads": 1, "total_reads": 1}
+        if objectives is not None:
+            result["objective_breakdown"] = [open_path_length(path, matrix) for matrix, _ in objectives]
+        return result
 
-    bqm = build_open_path_bqm(W, start_idx, end_idx, precedence=precedence)
+    bqm = build_open_path_bqm(W_eff, start_idx, end_idx, precedence=precedence, position_windows=position_windows)
     sampler = SimulatedAnnealingSampler()
 
     t0 = time.perf_counter()
     sampleset = sampler.sample(bqm, num_reads=num_reads, seed=seed)
     wall_seconds = time.perf_counter() - t0
 
-    # When precedence is given, prefer the best feasible read that actually
-    # satisfies it — the penalty makes violating it extremely costly, so in
-    # practice the lowest-energy feasible reads already satisfy it, but this
-    # makes that a checked guarantee rather than an assumption. best_any
-    # tracks the best feasible read regardless, as a last-resort fallback.
+    # When precedence and/or position_windows are given, prefer the best
+    # feasible read that actually satisfies BOTH — the penalty makes
+    # violating either extremely costly, so in practice the lowest-energy
+    # feasible reads already satisfy them, but this makes that a checked
+    # guarantee rather than an assumption. best_any tracks the best
+    # feasible read regardless, as a last-resort fallback.
     best_path, best_cost, feasible_count = None, float("inf"), 0
     best_path_any, best_cost_any = None, float("inf")
     for sample, energy in sampleset.data(fields=["sample", "energy"]):
@@ -384,19 +553,21 @@ def solve_open_path_quantum_inspired(
         if path is None:
             continue
         feasible_count += 1
-        cost = open_path_length(path, W)
+        cost = open_path_length(path, W_eff)
         if cost < best_cost_any:
             best_path_any, best_cost_any = path, cost
         if precedence and not satisfies_precedence(path, precedence):
+            continue
+        if position_windows and not satisfies_position_windows(path, position_windows):
             continue
         if cost < best_cost:
             best_path, best_cost = path, cost
 
     if best_path is None and best_path_any is not None:
-        # Every feasible read violated precedence — extremely unlikely given
-        # the penalty weight, but fall back to the best feasible read rather
-        # than dropping into the plain nearest-neighbor fallback below,
-        # which doesn't know about precedence at all.
+        # Every feasible read violated a constraint — extremely unlikely
+        # given the penalty weight, but fall back to the best feasible read
+        # rather than dropping into the plain nearest-neighbor fallback
+        # below, which doesn't know about either constraint at all.
         best_path, best_cost = best_path_any, best_cost_any
 
     if best_path is None:
@@ -411,7 +582,7 @@ def solve_open_path_quantum_inspired(
         remaining = set(middle)
         path, current = [start_idx], start_idx
         while remaining:
-            nxt = min(remaining, key=lambda v: W[current, v])
+            nxt = min(remaining, key=lambda v: W_eff[current, v])
             path.append(nxt)
             remaining.remove(nxt)
             current = nxt
@@ -421,12 +592,15 @@ def solve_open_path_quantum_inspired(
                 if not satisfies_precedence(path, [(u, v)]):
                     path = [c for c in path if c != v]
                     path.insert(path.index(u) + 1, v)
-        best_path, best_cost = path, open_path_length(path, W)
+        best_path, best_cost = path, open_path_length(path, W_eff)
 
-    return {
+    result = {
         "path": best_path, "cost": best_cost, "wall_seconds": wall_seconds,
         "feasible_reads": feasible_count, "total_reads": num_reads,
     }
+    if objectives is not None:
+        result["objective_breakdown"] = [open_path_length(best_path, matrix) for matrix, _ in objectives]
+    return result
 
 
 if __name__ == "__main__":

@@ -1,0 +1,16 @@
+baseline_arrival_min,experiment,n_waypoints,target_waypoint,trial,window,with_pruning_satisfied,without_pruning_satisfied
+216.8,time_windows,7,3,0,"(70.5, 113.9)",False,False
+412.4,time_windows,8,0,1,"(153.7, 236.1)",False,False
+191.5,time_windows,8,0,2,"(93.1, 131.4)",True,False
+138.1,time_windows,6,4,3,"(64.8, 92.4)",True,False
+120.7,time_windows,8,4,4,"(42.4, 66.5)",False,False
+105.4,time_windows,8,1,5,"(27.6, 48.6)",False,False
+324.1,time_windows,8,5,6,"(118.4, 183.2)",False,False
+196.1,time_windows,8,1,7,"(95.7, 134.9)",False,False
+369.9,time_windows,8,3,8,"(120.6, 194.6)",False,False
+389.8,time_windows,7,4,9,"(78.8, 156.7)",False,False
+271.9,time_windows,7,0,10,"(122.3, 176.6)",False,False
+271.9,time_windows,6,0,11,"(104.1, 158.5)",False,False
+250.6,time_windows,7,2,12,"(60.3, 110.5)",True,False
+84.0,time_windows,7,4,13,"(37.5, 54.3)",False,False
+231.2,time_windows,6,3,14,"(96.0, 142.3)",False,False

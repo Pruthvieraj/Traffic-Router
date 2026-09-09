@@ -38,6 +38,7 @@ import time
 import numpy as np
 
 from qubo_tsp import solve_open_path_quantum_inspired, solve_quantum_inspired, open_path_length
+from qpu_solver import solve_open_path_on_qpu, solve_tsp_on_qpu, QPU_AVAILABLE
 from baseline import (
     nearest_neighbor_2opt_open_path,
     nearest_neighbor_2opt_open_path_with_precedence_repair,
@@ -112,6 +113,14 @@ def solve_open_path_scalable(
             if prec:
                 return nearest_neighbor_2opt_open_path_with_precedence_repair(w, s, e, prec)
             return nearest_neighbor_2opt_open_path(w, s, e)
+        if method == "qpu":
+            if not QPU_AVAILABLE:
+                raise ValueError(
+                    "method=\"qpu\" needs the dwave-system package (`pip install dwave-system`) plus "
+                    "your own D-Wave Leap API token — see README.md's \"Real quantum hardware "
+                    "validation\" section. Neither is configured here."
+                )
+            return solve_open_path_on_qpu(w, s, e, precedence=prec)
         return solve_open_path_quantum_inspired(w, s, e, precedence=prec)
 
     if len(middle) <= cluster_size:
@@ -459,15 +468,23 @@ def solve_multi_vehicle(
             if prec:
                 return nearest_neighbor_2opt_with_precedence_repair(w, prec, start=0)
             return nearest_neighbor_2opt(w, start=0)
+        if method == "qpu" and not QPU_AVAILABLE:
+            raise ValueError(
+                "method=\"qpu\" needs the dwave-system package (`pip install dwave-system`) plus "
+                "your own D-Wave Leap API token — see README.md's \"Real quantum hardware "
+                "validation\" section. Neither is configured here."
+            )
         if prec:
             # Anchor the depot (local index 0) as both the fixed start and
             # fixed end of the open-path solver, instead of the ordinary
             # closed-loop solver — see the "PRECEDENCE" note in this
             # function's docstring for why a closed loop's rotation-
             # ambiguous position labeling makes "before" ill-defined here.
-            result = solve_open_path_quantum_inspired(w, start_idx=0, end_idx=0, precedence=prec)
+            solve_open_path = solve_open_path_on_qpu if method == "qpu" else solve_open_path_quantum_inspired
+            result = solve_open_path(w, start_idx=0, end_idx=0, precedence=prec)
             return {"tour": result["path"][:-1], "cost": result["cost"]}
-        return solve_quantum_inspired(w)
+        solve_closed = solve_tsp_on_qpu if method == "qpu" else solve_quantum_inspired
+        return solve_closed(w)
 
     vehicles = []
     total_cost = 0.0

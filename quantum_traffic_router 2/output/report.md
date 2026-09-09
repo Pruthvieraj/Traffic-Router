@@ -4,11 +4,11 @@
 
 | N waypoints | 2-opt (min) | QUBO+SA (min) | OR-Tools (min) | 2-opt time (ms) | QUBO+SA time (ms) | OR-Tools time (ms) |
 |---|---|---|---|---|---|---|
-| 6 | 186.7 | 186.7 | 186.7 | 0.05 | 386.99 | 2005.43 |
-| 8 | 186.7 | 220.2 | 186.7 | 0.06 | 796.1 | 2000.56 |
-| 10 | 260.6 | 301.7 | 260.6 | 0.14 | 1216.9 | 2000.53 |
-| 12 | 412.3 | 561.7 | 412.3 | 0.16 | 1854.41 | 2001.26 |
-| 14 | 538.0 | 725.8 | 538.0 | 0.24 | 2659.95 | 2000.71 |
+| 6 | 186.7 | 186.7 | 186.7 | 0.15 | 447.28 | 2017.94 |
+| 8 | 186.7 | 220.2 | 186.7 | 0.07 | 813.37 | 2001.34 |
+| 10 | 260.6 | 301.7 | 260.6 | 0.1 | 1325.26 | 2003.65 |
+| 12 | 412.3 | 561.7 | 412.3 | 0.22 | 1993.54 | 2001.22 |
+| 14 | 538.0 | 725.8 | 538.0 | 0.32 | 2880.95 | 2001.74 |
 
 **Honest finding:** on plain, unconstrained routing, classical nearest-neighbor+2-opt matches or beats the QUBO+simulated-annealing solver on both solution quality and speed. This matches well-established operations-research literature — 2-opt is a very strong heuristic for small-to-medium metric TSP, and a generic QUBO penalty formulation doesn't beat it here. We are not claiming otherwise; see Experiment 2 for where the QUBO framing earns its keep.
 
@@ -22,4 +22,37 @@
 - Average extra travel cost from patch-repairing a violated 2-opt route after the fact: **+8.4%**
 - Worst-case repair cost observed: **+31.9%**
 
-**This is the project's real technical claim:** once a routing problem has real dispatch constraints (pickup-before-dropoff, no-entry zones, priority stops, vehicle capacity — any rule beyond 'shortest path'), a classical local-search heuristic has no way to know about them and violates them more often than not unless a developer hand-writes a repair patch for every rule, which itself costs real distance. The QUBO formulation incorporates each new constraint as one additional composable penalty term in the same optimization and satisfies it by construction. That is the measurable technical effect the patent description should center on — not raw speed on the unconstrained case.
+**A real, measurable effect — but read it as one ingredient, not the whole claim.** Once a routing problem has real dispatch constraints (pickup-before-dropoff, no-entry zones, priority stops, vehicle capacity — any rule beyond 'shortest path'), a classical local-search heuristic has no way to know about them and violates them more often than not unless a developer hand-writes a repair patch for every rule, which itself costs real distance. The QUBO formulation incorporates each new constraint as one additional composable penalty term in the same optimization and satisfies it by construction. **This single-constraint mechanism on its own is not the patent claim** — a February 2026 peer-reviewed paper (Curuliuc & Leon) already describes the same precedence-as-penalty-term mechanism (see SIH_2026_Patent_Readiness_Research_Heer.docx). Experiment 3 below is where the actual remaining claim — composing multiple constraint types together — gets tested.
+
+## Experiment 3 — does solving constraints TOGETHER actually matter?
+
+Same fleet-dispatch scenario, three ways: solved with both demand-weighted capacity AND a precedence rule at once (COMPOSED), solved capacity-aware but precedence-blind (CAPACITY-ONLY), and solved precedence-aware but demand-blind during the vehicle split itself (PRECEDENCE-ONLY). All three use the same public `solve_multi_vehicle` API — this tests composition, not a new solver.
+
+- Trials run: **14** (trials where no precedence pair landed on a shared vehicle under the composed split were skipped, not counted)
+- COMPOSED satisfied both precedence AND capacity in **14/14** trials
+- CAPACITY-ONLY (precedence-blind) happened to violate the precedence rule anyway in **6/14** trials
+- PRECEDENCE-ONLY (demand-blind split) put the two stops on **different vehicles entirely** in **1/14** trials (the split itself became incompatible with the rule — solve_multi_vehicle correctly refuses rather than silently dropping it), and additionally **overloaded a vehicle beyond capacity** in **13/13** of the remaining trials where the pair did stay together
+- Worst observed overload from the demand-blind split (where it didn't separate the pair outright): **+51.5%** over `vehicle_capacity`
+
+**This is the actual remaining patent-relevant finding.** Handling one constraint type correctly (proven above, and by prior art) does not imply the fleet-dispatch DECISION stays valid once a second constraint type is added — a demand-blind split can hand a capacity-respecting-looking result to a vehicle that's actually overloaded, or can split the stops in a way that makes an otherwise-satisfiable precedence rule impossible to honor at all, because the SPLIT itself, not just the route, was made without knowing about demand. Composing precedence and capacity into one solve_multi_vehicle call is what guarantees both hold together, which is the system-level claim ("Tier 2" in the patent-readiness report) that neither Finding #1 (single constraint type, no live fleet split) nor Finding #2 (capacity only, no precedence) in that report covers.
+
+## Experiment 4 — is "multi-objective" a real trade-off?
+
+For each random waypoint set, the TRUE fastest tour and the TRUE shortest tour are found by exhaustive search (no simulated-annealing noise), then each is evaluated against the OTHER objective's matrix to measure what optimizing for only one actually costs.
+
+- Trials run: **12**
+- Trials where optimizing for only one objective provably costs something on the other: **7/12**
+- When they differ — extra distance from optimizing time only: avg **+1.0%**, worst **+1.9%**
+- When they differ — extra time from optimizing distance only: avg **+0.8%**, worst **+2.4%**
+
+**Finding:** time and distance are a genuine trade-off in this problem, not two names for the same number — optimizing for only one measurably costs the other. `qubo_tsp.combine_objectives` lets the SAME QUBO solver minimize a weighted sum of both with zero changes to `build_tsp_bqm`, and `tests/test_multi_objective.py` proves at the unit level (exact equality, not approximate) that the weighted-sum solve reduces to exactly this single-objective optimum at each extreme weight. Together, this is what turns "multi-objective routing" from a marketing word into a measured, provable property of the system.
+
+## Experiment 5 — does time-window "position pruning" actually help?
+
+time_windows.py is upfront that this project's position-based QUBO can't encode wall-clock arrival time directly — a real time-window guarantee needs a different formulation family (arc-based decision variables plus a time-propagation constraint), which is why this was flagged as the highest formulation-risk item on the roadmap. What IS implemented is a provably-safe pruning of tour POSITIONS that could never satisfy a window (`derive_position_window`), enforced in the QUBO exactly like precedence, then verified against the real solved schedule. This experiment measures the honest gap between "pruned" and "guaranteed" directly, on windows constructed to be a genuine ask (shifted meaningfully earlier than where the waypoint naturally landed with no constraint at all).
+
+- Trials run: **15** (trials whose constructed window was provably infeasible for the instance were skipped, not counted)
+- WITHOUT position pruning, the unconstrained solve's schedule already satisfied the window in **0/15** trials
+- WITH position pruning (`solve_with_time_windows`), the window was actually satisfied in **3/15** trials
+
+**Honest finding:** pruning helps — it never does worse than solving with no time-awareness at all — but it is NOT a satisfaction guarantee, and the numbers above show that plainly: two tours can place the same waypoint at the same allowed POSITION while arriving there at very different real times, because the position bound only rules out placements that could never work for ANY tour, not placements that simply didn't work out for the specific tour the solver found. **This is a partial, honestly-scoped answer to time windows, not a solved one** — full wall-clock guarantees remain a real reformulation, not yet attempted here.

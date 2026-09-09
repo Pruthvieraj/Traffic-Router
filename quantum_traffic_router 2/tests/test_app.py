@@ -53,6 +53,34 @@ def test_solve_valid_quantum(client):
     assert sorted(data["order"]) == [0, 1, 2]
 
 
+def test_solve_accepts_optional_points_field_without_changing_result(client):
+    """`points` (real [lat, lon] coordinates matching the matrix's rows) is
+    an optional field that only the live-traffic provider needs — see
+    src/traffic_provider.py's GoogleRoutesTrafficProvider. Under the
+    default TRAFFIC_PROVIDER=simulated it must be accepted but ignored, so
+    a client that starts sending it doesn't change any existing behavior."""
+    matrix = [[0, 300, 600], [300, 0, 400], [600, 400, 0]]
+    points = [[12.9767, 77.5713], [12.9352, 77.6245], [12.9116, 77.6389]]
+    resp_with = client.post(
+        "/api/solve", json={"matrix": matrix, "method": "classical", "hour": 18.5, "points": points}
+    )
+    resp_without = client.post(
+        "/api/solve", json={"matrix": matrix, "method": "classical", "hour": 18.5}
+    )
+    assert resp_with.status_code == 200
+    assert resp_with.get_json()["cost_minutes"] == pytest.approx(resp_without.get_json()["cost_minutes"])
+
+
+def test_solve_rejects_malformed_points_field(client):
+    matrix = [[0, 300, 600], [300, 0, 400], [600, 400, 0]]
+    resp = client.post(
+        "/api/solve",
+        json={"matrix": matrix, "method": "classical", "points": [[12.9, 77.5], [12.8, 77.6]]},  # wrong length
+    )
+    assert resp.status_code == 400
+    assert "points" in resp.get_json()["error"]
+
+
 def test_solve_scales_past_old_ten_stop_limit(client):
     """This exact request would have been REJECTED before the clustering
     feature (old MAX_STOPS was 10) — confirms the scaling upgrade actually
@@ -228,6 +256,39 @@ def test_solve_fleet_valid_request(client):
         assigned.extend(v["order"][1:-1])
     assert sorted(assigned) == [1, 2, 3]
     assert data["total_cost_minutes"] == pytest.approx(sum(v["cost_minutes"] for v in data["vehicles"]), abs=0.2)
+
+
+def test_solve_fleet_accepts_optional_points_field_without_changing_result(client):
+    matrix = [
+        [0, 300, 400, 500],
+        [300, 0, 200, 350],
+        [400, 200, 0, 300],
+        [500, 350, 300, 0],
+    ]
+    points = [[12.97, 77.57], [12.93, 77.62], [12.91, 77.63], [12.91, 77.61]]
+    resp_with = client.post(
+        "/api/solve_fleet", json={"matrix": matrix, "method": "classical", "n_vehicles": 2, "points": points}
+    )
+    resp_without = client.post(
+        "/api/solve_fleet", json={"matrix": matrix, "method": "classical", "n_vehicles": 2}
+    )
+    assert resp_with.status_code == 200
+    assert resp_with.get_json()["total_cost_minutes"] == pytest.approx(resp_without.get_json()["total_cost_minutes"])
+
+
+def test_solve_fleet_rejects_malformed_points_field(client):
+    matrix = [
+        [0, 300, 400, 500],
+        [300, 0, 200, 350],
+        [400, 200, 0, 300],
+        [500, 350, 300, 0],
+    ]
+    resp = client.post(
+        "/api/solve_fleet",
+        json={"matrix": matrix, "method": "classical", "n_vehicles": 2, "points": [[12.9, 77.5]]},
+    )
+    assert resp.status_code == 400
+    assert "points" in resp.get_json()["error"]
 
 
 def test_solve_fleet_rejects_too_few_points(client):
@@ -485,3 +546,87 @@ def test_analytics_response_never_leaks_per_request_data(client):
         "precedence_requests", "demand_weight_requests", "note",
     }
     assert set(data.keys()) == expected_keys
+
+
+# ---------- explainability (src/explain.py wired into /api/solve*) ----------
+
+def test_solve_response_includes_a_leg_by_leg_explanation(client):
+    matrix = [[0, 300, 600], [300, 0, 400], [600, 400, 0]]
+    resp = client.post("/api/solve", json={"matrix": matrix, "method": "classical"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    explanation = data["explanation"]
+    assert len(explanation["legs"]) == 2  # 3 stops, open path -> 2 legs
+    assert explanation["total_cost"] == pytest.approx(data["cost_minutes"], abs=0.1)
+    assert explanation["bottleneck_leg"]["cost"] == max(leg["cost"] for leg in explanation["legs"])
+
+
+def test_solve_response_explanation_reports_precedence_positions(client):
+    matrix = [[0, 300, 600, 500], [300, 0, 400, 350], [600, 400, 0, 250], [500, 350, 250, 0]]
+    resp = client.post("/api/solve", json={
+        "matrix": matrix, "method": "quantum", "precedence": [[1, 2]],
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    checks = data["explanation"]["precedence_checks"]
+    assert len(checks) == 1
+    assert checks[0]["u_index"] == 1 and checks[0]["v_index"] == 2
+    assert checks[0]["satisfied"] is data["precedence_satisfied"]
+
+
+def test_solve_fleet_response_includes_per_vehicle_explanation(client):
+    matrix = [
+        [0, 300, 400, 500],
+        [300, 0, 200, 350],
+        [400, 200, 0, 300],
+        [500, 350, 300, 0],
+    ]
+    resp = client.post("/api/solve_fleet", json={"matrix": matrix, "method": "classical", "n_vehicles": 2})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    explanation = data["explanation"]
+    assert len(explanation["vehicles"]) == data["n_vehicles_used"]
+    summed = sum(v["total_cost"] for v in explanation["vehicles"])
+    assert summed == pytest.approx(data["total_cost_minutes"], abs=0.2)
+
+
+def test_solve_fleet_response_explanation_reports_capacity_margin(client):
+    n = 6
+    matrix = [[abs(i - j) * 100.0 for j in range(n)] for i in range(n)]
+    resp = client.post("/api/solve_fleet", json={
+        "matrix": matrix, "method": "classical", "n_vehicles": 2,
+        "demands": {"1": 10, "2": 10, "3": 10, "4": 10, "5": 10},
+        "vehicle_capacity": 30,
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    for v in data["explanation"]["vehicles"]:
+        assert v["capacity_margin"] is not None
+        assert v["capacity_margin"] >= -1e-6
+
+
+# ---------- method="qpu" (real D-Wave hardware — src/qpu_solver.py) ----------
+#
+# This sandbox genuinely has no D-Wave Leap API token configured, so these
+# tests exercise the REAL "no credentials" failure path end to end through
+# the live app — not a mock. That failure must surface as a clean 4xx with
+# a clear message, never a 500 crash, since a live deployment without a
+# token configured would hit exactly this.
+
+def test_solve_with_qpu_method_fails_cleanly_without_credentials(client):
+    matrix = [[0, 300, 600], [300, 0, 400], [600, 400, 0]]
+    resp = client.post("/api/solve", json={"matrix": matrix, "method": "qpu"})
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
+def test_solve_fleet_with_qpu_method_fails_cleanly_without_credentials(client):
+    matrix = [
+        [0, 300, 400, 500],
+        [300, 0, 200, 350],
+        [400, 200, 0, 300],
+        [500, 350, 300, 0],
+    ]
+    resp = client.post("/api/solve_fleet", json={"matrix": matrix, "method": "qpu", "n_vehicles": 2})
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()

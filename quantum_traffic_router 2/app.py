@@ -52,6 +52,7 @@ from congestion import apply_incident_spikes  # noqa: E402
 from traffic_provider import get_traffic_provider  # noqa: E402
 from qubo_tsp import open_path_length, satisfies_precedence  # noqa: E402
 from build_multi_city_map import load_inline_leaflet  # noqa: E402
+from explain import explain_fleet, explain_path  # noqa: E402
 import analytics  # noqa: E402
 
 app = Flask(__name__)
@@ -200,6 +201,17 @@ def solve():
     # a post-hoc filter — see src/qubo_tsp.py's build_open_path_bqm and
     # README.md "Where the QUBO framing actually earns its keep."
     precedence = body.get("precedence") or []
+    # Optional: [[lat, lon], ...] real-world coordinates for each point, in
+    # the SAME order as `matrix`'s rows. Nothing else in this project's
+    # optimization core needs coordinates (see src/distance_matrix.py — the
+    # QUBO/classical solvers only ever see a travel-time matrix), so this is
+    # the one place they'd otherwise be lost. It exists purely to let a real
+    # traffic provider (TRAFFIC_PROVIDER=google_routes — see
+    # src/traffic_provider.py's GoogleRoutesTrafficProvider) ask a live API
+    # for traffic-aware travel times; the default simulated provider ignores
+    # it entirely, so omitting `points` changes nothing when running with
+    # the default config.
+    points = body.get("points")
 
     if not isinstance(matrix, list) or len(matrix) < 2:
         return jsonify({"error": "Need a travel-time matrix for at least 2 points."}), 400
@@ -212,6 +224,12 @@ def solve():
         not isinstance(p, list) or len(p) != 2 for p in incident_pairs
     ):
         return jsonify({"error": "incident_pairs must be a list of [i, j] index pairs."}), 400
+    if points is not None and (
+        not isinstance(points, list) or len(points) != n or
+        any(not isinstance(p, list) or len(p) != 2 for p in points)
+    ):
+        return jsonify({"error": "points, if provided, must be a list of [lat, lon] pairs matching matrix rows."}), 400
+    coords = [tuple(p) for p in points] if points is not None else None
 
     start_idx, end_idx = 0, n - 1
     precedence_error = _validate_precedence(precedence, n, start_idx, end_idx)
@@ -237,7 +255,7 @@ def solve():
         # congestion-adjusted one. This is a SIMULATED congestion layer on
         # real geometry, not a live traffic feed — labeled as such in every
         # response field name below.
-        W_congested = _traffic_provider.get_congested_matrix(W_free_flow, hour=hour)
+        W_congested = _traffic_provider.get_congested_matrix(W_free_flow, hour=hour, coords=coords)
 
         # An optional extra spike on top of ordinary traffic — models one
         # specific leg suddenly getting much worse (an accident, a closed
@@ -278,6 +296,17 @@ def solve():
             "solve", method, solve_ms,
             incident_applied=incident_applied, precedence_applied=bool(precedence),
         )
+
+        # Explainability: a per-leg breakdown of the route the solver just
+        # returned (which leg costs the most, and — when a precedence rule
+        # was requested — exactly where each side of it landed) computed
+        # purely from `path` + `W_congested`, not trusted from the solver.
+        # See src/explain.py; this changes nothing about how the route
+        # itself was solved.
+        explanation = explain_path(
+            path, W_congested, precedence=[tuple(p) for p in precedence] or None,
+        )
+
         return jsonify({
             "order": path,
             "cost_minutes": round(result["cost"], 1),
@@ -291,6 +320,7 @@ def solve():
             "incident_applied": incident_applied,
             "precedence_applied": bool(precedence),
             "precedence_satisfied": satisfies_precedence(path, [tuple(p) for p in precedence]) if precedence else True,
+            "explanation": explanation,
         })
 
     except ValueError as e:
@@ -337,6 +367,10 @@ def solve_fleet():
     # (decided before precedence is even looked at) happens to keep u and v
     # on the same vehicle.
     precedence = body.get("precedence") or []
+    # Optional [[lat, lon], ...] coordinates matching matrix's rows — same
+    # contract and purpose as /api/solve's `points` field (see its comment
+    # above); threaded through to the active TRAFFIC_PROVIDER unchanged.
+    points = body.get("points")
 
     if not isinstance(matrix, list) or len(matrix) < 3:
         return jsonify({"error": "Need at least a depot plus 2 stops to split across vehicles."}), 400
@@ -345,6 +379,12 @@ def solve_fleet():
         return jsonify({"error": f"Please use at most {MAX_STOPS} points for a live demo-speed solve."}), 400
     if any(not isinstance(row, list) or len(row) != n for row in matrix):
         return jsonify({"error": "Matrix must be square (NxN)."}), 400
+    if points is not None and (
+        not isinstance(points, list) or len(points) != n or
+        any(not isinstance(p, list) or len(p) != 2 for p in points)
+    ):
+        return jsonify({"error": "points, if provided, must be a list of [lat, lon] pairs matching matrix rows."}), 400
+    coords = [tuple(p) for p in points] if points is not None else None
     if not (0 <= depot_index < n):
         return jsonify({"error": "depot_index out of range."}), 400
     if n_vehicles < 1:
@@ -394,7 +434,7 @@ def solve_fleet():
 
     try:
         W_free_flow = np.array(matrix, dtype=float) / 60.0
-        W_congested = _traffic_provider.get_congested_matrix(W_free_flow, hour=hour)
+        W_congested = _traffic_provider.get_congested_matrix(W_free_flow, hour=hour, coords=coords)
         stop_indices = [i for i in range(n) if i != depot_index]
 
         # demands_by_index may not cover every stop_index if the client sent
@@ -450,6 +490,16 @@ def solve_fleet():
             demand_weights_used=demands_for_solver is not None,
             precedence_applied=bool(precedence),
         )
+
+        # Explainability: per-vehicle leg breakdown, capacity headroom (when
+        # demand weights were used), and which vehicle owns each precedence
+        # rule — see src/explain.py. Pure interpretation of `result`, which
+        # was already fully solved above.
+        explanation = explain_fleet(
+            result, W_congested, demands=demands_for_solver, vehicle_capacity=vehicle_capacity,
+            precedence=precedence_tuples,
+        )
+
         return jsonify({
             "vehicles": vehicles_out,
             "total_cost_minutes": round(result["total_cost"], 1),
@@ -462,6 +512,7 @@ def solve_fleet():
             "vehicle_capacity": vehicle_capacity,
             "precedence_applied": bool(precedence),
             "precedence_satisfied": precedence_satisfied,
+            "explanation": explanation,
         })
 
     except ValueError as e:

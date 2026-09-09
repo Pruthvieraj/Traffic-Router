@@ -1,0 +1,15 @@
+capacity_only_precedence_ok_by_luck,composed_capacity_ok,composed_precedence_ok,experiment,n_vehicles,n_waypoints,precedence_only_capacity_ok_by_luck,precedence_only_pair_separated_by_demand_blind_split,precedence_only_worst_vehicle_over_capacity_pct,precedence_rule,trial,vehicle_capacity
+True,True,True,composed,3,7,False,False,51.5,Indiranagar before Domlur,0,33.0
+False,True,True,composed,3,8,False,False,25.0,Malleshwaram before Majestic,2,48.0
+True,True,True,composed,2,7,False,False,35.1,MG Road before Marathahalli,3,51.8
+False,True,True,composed,2,6,False,False,11.1,Yeshwantpur before Malleshwaram,4,54.0
+True,True,True,composed,3,8,,True,,BTM Layout before HSR Layout,5,37.5
+True,True,True,composed,3,6,False,False,42.9,Majestic before Malleshwaram,6,31.5
+True,True,True,composed,3,8,False,False,20.0,Majestic before Malleshwaram,7,37.5
+False,True,True,composed,2,6,False,False,24.6,Domlur before Yeshwantpur,8,56.2
+False,True,True,composed,2,7,False,False,35.1,Yeshwantpur before Majestic,9,51.8
+True,True,True,composed,2,7,False,False,11.1,BTM Layout before HSR Layout,10,54.0
+True,True,True,composed,2,7,False,False,23.4,MG Road before Jayanagar,11,60.8
+False,True,True,composed,2,6,False,False,11.1,Electronic City before Silk Board,12,40.5
+True,True,True,composed,2,8,False,False,15.7,Marathahalli before Whitefield,13,56.2
+False,True,True,composed,3,6,False,False,42.9,Malleshwaram before Majestic,14,31.5

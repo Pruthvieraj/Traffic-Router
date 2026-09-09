@@ -831,3 +831,136 @@ def test_stop_weight_helper_drops_removed_index_and_shifts_others(live_server, b
     """)
     page.close()
     assert after_removal == {"1": 10, "2": 30}
+
+
+# ---------- "Live re-optimize" continuous re-optimization demo ----------
+# See README.md's "Continuous re-optimization" section and
+# templates/click_router.html's own "Live re-optimization demo" comment
+# block for the full honest scope: a simulated clock advancing on a timer,
+# repeatedly calling the SAME /api/solve endpoint the manual "Solve route"
+# and "Simulate incident" buttons use. These tests exercise that through a
+# real browser against the real running app.py (not the Flask test
+# client) — /api/solve itself is reached at live_server's own local
+# address and is NOT stubbed, only the external OSRM/tile services this
+# sandbox can't reach are, so this verifies the real backend end-to-end,
+# just substituting the external routing/tile services.
+
+def _stub_map_tiles(page):
+    """Abort real map-tile requests outright — irrelevant to what these
+    tests check, and, against real external tile hosts, slow/unreliable to
+    wait on in a network-restricted environment. Leaflet tolerates failed
+    tile loads fine (it just shows blank tiles), so this doesn't affect
+    any of the JS behavior under test."""
+    page.route("**basemaps.cartocdn.com/**", lambda route: route.abort())
+    page.route("**arcgisonline.com/**", lambda route: route.abort())
+
+
+def _stub_osrm(page, n_points):
+    """Fulfil OSRM's Table and Route APIs with a small synthetic road
+    network so a real click -> solve -> draw flow can run in a browser
+    with no real network access to router.project-osrm.org."""
+    def handle_table(route):
+        durations = [
+            [0 if i == j else 300 + 60 * abs(i - j) for j in range(n_points)]
+            for i in range(n_points)
+        ]
+        route.fulfill(json={"code": "Ok", "durations": durations})
+
+    def handle_route_geom(route):
+        route.fulfill(json={
+            "code": "Ok",
+            "routes": [{
+                "geometry": {"coordinates": [[77.55, 12.90], [77.60, 12.95]]},
+                "distance": 5000,
+                "duration": 600,
+                "legs": [
+                    {"steps": [
+                        {"maneuver": {"type": "depart"}, "name": "Test Road", "distance": 500},
+                        {"maneuver": {"type": "arrive"}, "name": "", "distance": 0},
+                    ]}
+                    for _ in range(max(1, n_points - 1))
+                ],
+            }],
+        })
+
+    page.route("**router.project-osrm.org/table/**", handle_table)
+    page.route("**router.project-osrm.org/route/**", handle_route_geom)
+
+
+def _solve_three_stops(page):
+    """Programmatically drop 3 points and solve — bypassing real map
+    clicks (which need real tile-rendered pixel coordinates) the same way
+    other tests in this file call internal JS functions directly."""
+    page.evaluate("""
+        () => { addPoint(12.97, 77.59); addPoint(12.93, 77.62); addPoint(12.91, 77.63); }
+    """)
+    page.click("#solveBtn")
+    page.wait_for_function("document.getElementById('stats').style.display === 'block'", timeout=10000)
+
+
+def test_live_reopt_button_only_enables_after_a_successful_solve(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    _stub_osrm(page, 3)
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    disabled_before = page.eval_on_selector("#liveReoptBtn", "el => el.disabled")
+    _solve_three_stops(page)
+    disabled_after = page.eval_on_selector("#liveReoptBtn", "el => el.disabled")
+
+    page.close()
+    assert disabled_before is True
+    assert disabled_after is False
+
+
+def test_live_reopt_start_logs_a_tick_and_stop_resets_the_button(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    _stub_osrm(page, 3)
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    _solve_three_stops(page)
+
+    page.click("#liveReoptBtn")
+    # Wait for the SECOND feed line, not just the first: the first line is
+    # the synchronous "live re-optimization started" notice, appended
+    # before the first real tick's (async) /api/solve round-trip
+    # completes.
+    page.wait_for_function(
+        "document.getElementById('liveFeed-list').children.length > 1", timeout=10000,
+    )
+    is_active = page.eval_on_selector("#liveReoptBtn", "el => el.classList.contains('live-active')")
+    feed_text = page.inner_text("#liveFeed-list")
+
+    page.click("#liveReoptBtn")  # stop
+    page.wait_for_function(
+        "!document.getElementById('liveReoptBtn').classList.contains('live-active')", timeout=5000,
+    )
+    stopped_label = page.inner_text("#liveReoptBtn")
+    is_active_after_stop = page.eval_on_selector("#liveReoptBtn", "el => el.classList.contains('live-active')")
+
+    page.close()
+    assert is_active is True
+    assert "min" in feed_text  # a real tick logged a cost figure, not an empty/placeholder line
+    assert is_active_after_stop is False
+    assert "Live re-optimize" in stopped_label
+
+
+def test_live_reopt_stops_and_disables_when_points_are_cleared(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    _stub_osrm(page, 3)
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    _solve_three_stops(page)
+
+    page.click("#liveReoptBtn")
+    page.wait_for_function(
+        "document.getElementById('liveFeed-list').children.length > 0", timeout=10000,
+    )
+    page.click("#clearBtn")
+
+    is_active_after_clear = page.eval_on_selector("#liveReoptBtn", "el => el.classList.contains('live-active')")
+    disabled_after_clear = page.eval_on_selector("#liveReoptBtn", "el => el.disabled")
+
+    page.close()
+    assert is_active_after_clear is False
+    assert disabled_after_clear is True
