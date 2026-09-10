@@ -938,7 +938,7 @@ def test_stop_weight_helper_drops_removed_index_and_shifts_others(live_server, b
 
 
 # ---------- "Live re-optimize" continuous re-optimization demo ----------
-# See README.md's "Continuous re-optimization" section and
+# See docs/live-app.md's "Continuous re-optimization" section and
 # templates/click_router.html's own "Live re-optimization demo" comment
 # block for the full honest scope: a simulated clock advancing on a timer,
 # repeatedly calling the SAME /api/solve endpoint the manual "Solve route"

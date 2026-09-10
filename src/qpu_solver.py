@@ -20,7 +20,7 @@ classically simulating one.
 
 WHAT THIS NEEDS THAT NOTHING ELSE IN THIS PROJECT DOES: your own D-Wave
 Leap API token from a plan that actually includes API access — see
-README.md's "Real quantum hardware validation" section for the full setup
+docs/quantum-hardware.md for the full setup
 and the honest correction that free self-serve Leap signup does NOT get
 you a usable token (only a paid plan or an accepted Leap Quantum LaunchPad
 application does). Once you have a real token: `pip install dwave-system`,
@@ -91,7 +91,7 @@ def _build_sampler():
     if not QPU_AVAILABLE:
         raise ImportError(
             "dwave-system isn't installed — run `pip install dwave-system` to enable method=\"qpu\". "
-            "See README.md's \"Real quantum hardware validation\" section for full one-time setup."
+            "See docs/quantum-hardware.md for full one-time setup."
         )
     qpu = DWaveSampler()
     return EmbeddingComposite(qpu)

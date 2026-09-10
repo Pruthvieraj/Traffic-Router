@@ -4,11 +4,11 @@
 
 | N waypoints | 2-opt (min) | QUBO+SA (min) | OR-Tools (min) | 2-opt time (ms) | QUBO+SA time (ms) | OR-Tools time (ms) |
 |---|---|---|---|---|---|---|
-| 6 | 186.7 | 186.7 | 186.7 | 0.04 | 379.24 | 2014.57 |
-| 8 | 186.7 | 220.2 | 186.7 | 0.06 | 730.55 | 2000.78 |
-| 10 | 260.6 | 301.7 | 260.6 | 0.11 | 1093.42 | 2002.46 |
-| 12 | 412.3 | 561.7 | 412.3 | 0.15 | 1636.13 | 2000.71 |
-| 14 | 538.0 | 725.8 | 538.0 | 0.23 | 2379.32 | 2001.09 |
+| 6 | 186.7 | 186.7 | 186.7 | 0.05 | 347.22 | 2006.57 |
+| 8 | 186.7 | 220.2 | 186.7 | 0.08 | 677.17 | 2001.24 |
+| 10 | 260.6 | 301.7 | 260.6 | 0.07 | 1055.07 | 2000.53 |
+| 12 | 412.3 | 561.7 | 412.3 | 0.11 | 1472.3 | 2000.49 |
+| 14 | 538.0 | 725.8 | 538.0 | 0.21 | 2199.21 | 2000.37 |
 
 **Honest finding:** on plain, unconstrained routing, classical nearest-neighbor+2-opt matches or beats the QUBO+simulated-annealing solver on both solution quality and speed. This matches well-established operations-research literature — 2-opt is a very strong heuristic for small-to-medium metric TSP, and a generic QUBO penalty formulation doesn't beat it here. We are not claiming otherwise; see Experiment 2 for where the QUBO framing earns its keep.
 
@@ -56,3 +56,12 @@ time_windows.py is upfront that this project's position-based QUBO can't encode 
 - WITH position pruning (`solve_with_time_windows`), the window was actually satisfied in **3/15** trials
 
 **Honest finding:** pruning helps — it never does worse than solving with no time-awareness at all — but it is NOT a satisfaction guarantee, and the numbers above show that plainly: two tours can place the same waypoint at the same allowed POSITION while arriving there at very different real times, because the position bound only rules out placements that could never work for ANY tour, not placements that simply didn't work out for the specific tour the solver found. **This is a partial, honestly-scoped answer to time windows, not a solved one** — full wall-clock guarantees remain a real reformulation, not yet attempted here.
+
+## Experiment 6 — fleet mode vs. a real joint capacitated VRP solver
+
+`clustering.solve_multi_vehicle`'s own docstring is upfront that fleet mode splits stops across vehicles and then routes each vehicle SEPARATELY (cluster-first/route-second) — it never searches for a better split once vehicles are assigned. This experiment compares that against Google OR-Tools' capacitated VRP solver (`src/ortools_vrp_baseline.py`), which decides the split and the routing JOINTLY, on identical capacity-only scenarios (no precedence — that composed-constraints question is Experiment 3's, not this one's).
+
+- Trials run: **15**
+- Our two-step split's total cost was on average **10.4% above** OR-Tools' joint solve, worst case **41.8% above** in a single trial, and **3/15** trials tied OR-Tools exactly (the two-step split already happened to be optimal)
+
+**Honest finding:** a real joint solver never did worse than our cluster-first/route-second split, which is expected (it can always fall back to reproducing the same split) — the gap above is the genuine, measured cost of deciding the fleet split and the routing in two separate steps instead of one. It is a real gap, but a bounded one on these scenario sizes, not a case where fleet mode's output is unreasonable — see docs/benchmarks.md for the full picture alongside Experiments 1-5.

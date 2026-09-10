@@ -2,12 +2,12 @@ networkx>=3.0
 numpy>=1.24
 matplotlib>=3.7
 dimod>=0.12
-dwave-samplers>=1.8
-dwave-system>=1.28
+dwave-samplers>=1.8,<2
+dwave-system>=1.28,<2
 folium>=0.20
 flask>=3.0
 flask-limiter>=3.5
-osmnx>=1.9
+osmnx>=1.9,<3
 gunicorn>=21.2
 requests>=2.31
 
@@ -16,6 +16,18 @@ requests>=2.31
 # is still used by src/city_graph.py's get_or_build_street_graph(), which
 # only prefetch_street_graphs.py calls now; it's kept here for that offline
 # tool, not because the live app needs it.
+#
+# osmnx, dwave-samplers, and dwave-system all carry an upper bound (<3, <2,
+# <2 respectively) instead of an unbounded >=, unlike the pure-Python
+# dependencies above/below them — these three pull in native/C-extension
+# build steps (osmnx's own geo stack; dwave-samplers' and dwave-system's
+# C++ solver/minor-embedding internals via minorminer), so a future major
+# release is more likely to change a build requirement or a function
+# signature this project actually calls, not just add features. This
+# project is tested against osmnx 2.1.1 and dwave-samplers/dwave-system
+# 1.8.0/1.36.0 specifically (this sandbox's installed versions while these
+# pins were added) — the upper bound just stops an untested future major
+# from being silently picked up by a fresh install.
 #
 # flask-limiter adds basic per-IP rate limiting to /api/solve and
 # /api/solve_fleet (20 requests/minute) so a public demo URL can't be

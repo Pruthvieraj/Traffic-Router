@@ -138,8 +138,8 @@ def solve_open_path_scalable(
             if not QPU_AVAILABLE:
                 raise ValueError(
                     "method=\"qpu\" needs the dwave-system package (`pip install dwave-system`) plus "
-                    "your own D-Wave Leap API token — see README.md's \"Real quantum hardware "
-                    "validation\" section. Neither is configured here."
+                    "your own D-Wave Leap API token — see docs/quantum-hardware.md. "
+                    "Neither is configured here."
                 )
             return solve_open_path_on_qpu(w, s, e, precedence=prec, position_windows=pwin)
         return solve_open_path_quantum_inspired(w, s, e, precedence=prec, position_windows=pwin)
@@ -499,8 +499,8 @@ def solve_multi_vehicle(
         if method == "qpu" and not QPU_AVAILABLE:
             raise ValueError(
                 "method=\"qpu\" needs the dwave-system package (`pip install dwave-system`) plus "
-                "your own D-Wave Leap API token — see README.md's \"Real quantum hardware "
-                "validation\" section. Neither is configured here."
+                "your own D-Wave Leap API token — see docs/quantum-hardware.md. "
+                "Neither is configured here."
             )
         if prec:
             # Anchor the depot (local index 0) as both the fixed start and

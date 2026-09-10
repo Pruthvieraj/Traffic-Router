@@ -173,8 +173,8 @@ def main():
                 f"{'YES' if matches_optimal else 'not on this particular run — annealing is probabilistic, rerunning often finds it'}\n")
         f.write("\n_This solves the exact same `build_open_path_bqm` QUBO the live app uses via "
                 "`src/qpu_solver.solve_open_path_on_qpu` — the same function `method=\"qpu\"` calls "
-                "everywhere else in this project (see README.md's \"Real quantum hardware "
-                "validation\" section) — the only thing that changes here is which sampler solves "
+                "everywhere else in this project (see docs/quantum-hardware.md) — the only thing "
+                "that changes here is which sampler solves "
                 "it: classical simulated annealing vs. a physical D-Wave quantum annealer._\n")
 
     print("\nWrote output/real_quantum_hardware_result.md — quote or screenshot this in your pitch.")

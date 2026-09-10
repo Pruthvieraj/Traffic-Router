@@ -31,12 +31,15 @@ paths:
         No auth, no request body — just open the URL. Returns aggregate
         counts only (total solves, split by endpoint/method, error count,
         average solve time); no per-request data (matrices, IPs,
-        timestamps of individual calls) is ever stored. See
-        src/analytics.py's docstring for the honest scope: this is an
-        in-process counter that resets on every restart/redeploy and is
-        specific to whichever single worker process serves the request —
-        not a durable analytics pipeline, just a live number for the
-        current running demo.
+        timestamps of individual calls) is ever stored, in memory or in
+        the backing SQLite file. See src/analytics.py's docstring for the
+        honest scope: counts are now persisted to a local SQLite file, so
+        they survive a plain process restart and stay complete across
+        multiple worker processes on one machine — but NOT across a fresh
+        deploy (a new disk) or across multiple separate machines. Still
+        not a durable analytics pipeline in the "survives everything,
+        scales anywhere" sense — a live number for the current deployment,
+        nothing more.
       responses:
         '200':
           description: Current aggregate usage counters
@@ -198,8 +201,8 @@ components:
             no account needed); classical = nearest-neighbor + 2-opt
             baseline; qpu = the SAME QUBO submitted to a real D-Wave
             quantum annealer — needs the deployment's own configured
-            D-Wave Leap API token (see README.md "Real quantum hardware
-            validation"), fails with a clear 400 if none is configured,
+            D-Wave Leap API token (see docs/quantum-hardware.md), fails
+            with a clear 400 if none is configured,
             and is capped at a small instance size for real hardware
             embeddability (src/qpu_solver.py).
         hour:
