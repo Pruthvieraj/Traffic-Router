@@ -54,7 +54,7 @@ from congestion import apply_incident_spikes  # noqa: E402
 from traffic_provider import get_traffic_provider  # noqa: E402
 from qubo_tsp import open_path_length, satisfies_precedence  # noqa: E402
 from build_multi_city_map import load_inline_leaflet  # noqa: E402
-from explain import explain_fleet, explain_path  # noqa: E402
+from explain import explain_fleet, explain_open_path_precedence_impact, explain_path  # noqa: E402
 from time_windows import check_time_windows, compute_arrival_schedule, derive_position_window  # noqa: E402
 import analytics  # noqa: E402
 
@@ -243,7 +243,7 @@ def _record_solve_errors(response):
     than at each of the many individual `return jsonify({"error": ...}),
     4xx` lines scattered through solve()/solve_fleet() below, so a new
     validation check added later can't silently forget to record itself."""
-    if request.path in ("/api/solve", "/api/solve_fleet") and response.status_code >= 400:
+    if request.path in ("/api/solve", "/api/solve_fleet", "/api/explain_precedence_impact") and response.status_code >= 400:
         analytics.record_error()
     return response
 
@@ -545,6 +545,70 @@ def solve():
         # A genuine bad-input case we validated for but a solver layer
         # still caught (e.g. solve_open_path_scalable's own precedence/
         # cluster-size guard) — a client error (400), not a server fault.
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/explain_precedence_impact", methods=["POST"])
+@_rate_limit("20 per minute")
+def explain_precedence_impact_endpoint():
+    """On-demand answer to "what did THIS precedence rule actually cost me
+    on THIS route" — see src/explain.py's explain_open_path_precedence_impact
+    for the before/after comparison itself. Product-audit item: this used
+    to exist only as a tested library function, never reachable from the
+    UI. A SEPARATE endpoint from /api/solve, deliberately not folded into
+    every solve response — it means solving the SAME instance a second
+    time (once with the rule enforced, once without), real added latency a
+    visitor should only pay for by explicitly asking "what does this rule
+    cost me," not on every ordinary solve. Single-vehicle mode only,
+    matching precedence's own honest scope everywhere else in this
+    project — see solve()'s docstring above for why /api/solve_fleet is
+    a separate endpoint with its own precedence handling."""
+    body = request.get_json(force=True)
+    matrix = body.get("matrix")
+    method = body.get("method", "quantum")
+    hour = float(body.get("hour", 12.0))
+    precedence = body.get("precedence") or []
+    points = body.get("points")
+
+    if not isinstance(matrix, list) or len(matrix) < 2:
+        return jsonify({"error": "Need a travel-time matrix for at least 2 points."}), 400
+    n = len(matrix)
+    if n > MAX_STOPS:
+        return jsonify({"error": f"Please use at most {MAX_STOPS} points for a live demo-speed solve."}), 400
+    if any(not isinstance(row, list) or len(row) != n for row in matrix):
+        return jsonify({"error": "Matrix must be square (NxN)."}), 400
+    if points is not None and (
+        not isinstance(points, list) or len(points) != n or
+        any(not isinstance(p, list) or len(p) != 2 for p in points)
+    ):
+        return jsonify({"error": "points, if provided, must be a list of [lat, lon] pairs matching matrix rows."}), 400
+    coords = [tuple(p) for p in points] if points is not None else None
+
+    start_idx, end_idx = 0, n - 1
+    if not precedence:
+        return jsonify({"error": "precedence must be a non-empty list of [u, v] pairs to explain."}), 400
+    precedence_error = _validate_precedence(precedence, n, start_idx, end_idx)
+    if precedence_error:
+        return jsonify({"error": precedence_error}), 400
+    interior_count = n - 2
+    if interior_count > CLUSTER_SIZE:
+        return jsonify({
+            "error": f"This before/after comparison is only supported up to {CLUSTER_SIZE} interior "
+                     "stops in this first cut — same scope limit as precedence itself above that size "
+                     "(see /api/solve). Reduce the number of stops to see this rule's real cost."
+        }), 400
+
+    try:
+        W_free_flow = np.array(matrix, dtype=float) / 60.0
+        W_congested = _traffic_provider.get_congested_matrix(W_free_flow, hour=hour, coords=coords)
+        impact = explain_open_path_precedence_impact(
+            W_congested, start_idx, end_idx, [tuple(p) for p in precedence], method=method,
+        )
+        return jsonify(impact)
+    except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         traceback.print_exc()

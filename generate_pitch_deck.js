@@ -30,26 +30,65 @@ const pptxgen = require("pptxgenjs");
 const OUTPUT_DIR = path.join(__dirname, "output");
 const EXP1_CSV = path.join(OUTPUT_DIR, "experiment_1_unconstrained.csv");
 const EXP2_CSV = path.join(OUTPUT_DIR, "experiment_2_constrained.csv");
+const EXP3_CSV = path.join(OUTPUT_DIR, "experiment_3_composed.csv");
+const EXP4_CSV = path.join(OUTPUT_DIR, "experiment_4_multi_objective.csv");
+const EXP5_CSV = path.join(OUTPUT_DIR, "experiment_5_time_windows.csv");
 const OUT_PATH = path.join(OUTPUT_DIR, "pitch_deck.pptx");
 
 // ---------------------------------------------------------------------
-// Tiny CSV reader — every field in these two files is a plain number,
-// True/False, or a comma-free string, so a naive split is safe (no
-// quoted-field handling needed) and keeps this script dependency-free.
+// Tiny CSV reader. Experiment 1/2's fields are all plain numbers,
+// True/False, or comma-free strings, but Experiment 5's `window` column
+// is a quoted "(earliest, latest)" tuple with a comma INSIDE the quotes
+// (csv.DictWriter's standard quoting) — a naive split(",") would shift
+// every later column in that row, silently corrupting the two booleans
+// this deck actually reads from it. This is a minimal quote-aware parser
+// (handles "" as an escaped quote) rather than a full RFC 4180 impl,
+// which is all these files ever produce.
 // ---------------------------------------------------------------------
+function parseCsvLine(line) {
+  const cells = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; } else { inQuotes = false; }
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ",") {
+      cells.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  cells.push(cur);
+  return cells;
+}
+
 function readCsv(csvPath) {
   const text = fs.readFileSync(csvPath, "utf8").trim();
   const [headerLine, ...lines] = text.split("\n");
-  const headers = headerLine.split(",");
+  const headers = parseCsvLine(headerLine);
   return lines.map((line) => {
-    const cells = line.split(",");
+    const cells = parseCsvLine(line);
     const row = {};
     headers.forEach((h, i) => { row[h] = cells[i]; });
     return row;
   });
 }
 
-for (const p of [EXP1_CSV, EXP2_CSV]) {
+// csv.DictWriter (src/benchmark.py) writes Python's True/False/None as the
+// literal strings "True"/"False"/"" — these turn a raw cell back into the
+// JS value summarize_and_save()'s own aggregate logic below mirrors.
+function toBool(v) { return v === "True"; }
+function toFloatOrNull(v) { return (v === undefined || v === "") ? null : parseFloat(v); }
+
+for (const p of [EXP1_CSV, EXP2_CSV, EXP3_CSV, EXP4_CSV, EXP5_CSV]) {
   if (!fs.existsSync(p)) {
     console.error(`Missing ${p}.`);
     console.error("Run `python3 main.py` first — it regenerates the benchmark CSVs this deck reads from.");
@@ -72,6 +111,69 @@ const exp2 = {
   quboValid: exp2Rows.filter((r) => r.qubo_sa_satisfies_rule === "True").length,
   avgRepairPct: exp2Rows.reduce((s, r) => s + parseFloat(r.repaired_2opt_extra_cost_pct), 0) / exp2Rows.length,
   maxRepairPct: Math.max(...exp2Rows.map((r) => parseFloat(r.repaired_2opt_extra_cost_pct))),
+};
+
+// Experiment 3 — composing capacity + precedence together. Aggregate logic
+// mirrors src/benchmark.py's summarize_and_save() exactly (see its
+// "Experiment 3" section) so this slide can never say a number the report
+// and test suite don't also produce.
+const exp3Rows = readCsv(EXP3_CSV).map((r) => ({
+  composedPrecedenceOk: toBool(r.composed_precedence_ok),
+  composedCapacityOk: toBool(r.composed_capacity_ok),
+  capacityOnlyPrecedenceOkByLuck: toBool(r.capacity_only_precedence_ok_by_luck),
+  precedenceOnlyPairSeparated: toBool(r.precedence_only_pair_separated_by_demand_blind_split),
+  // Explicit tri-state: "True"/"False"/"" (skipped — the pair was already
+  // separated, so there's no "capacity ok" question to ask) — NOT the same
+  // as toBool("") === false, so this is read as its own nullable field.
+  precedenceOnlyCapacityOkByLuck: r.precedence_only_capacity_ok_by_luck === "" ? null : toBool(r.precedence_only_capacity_ok_by_luck),
+  precedenceOnlyWorstOverPct: toFloatOrNull(r.precedence_only_worst_vehicle_over_capacity_pct),
+}));
+const exp3 = (() => {
+  const n = exp3Rows.length;
+  const composedBothOk = exp3Rows.filter((r) => r.composedPrecedenceOk && r.composedCapacityOk).length;
+  const capacityOnlyLuckFail = exp3Rows.filter((r) => !r.capacityOnlyPrecedenceOkByLuck).length;
+  const pairSeparated = exp3Rows.filter((r) => r.precedenceOnlyPairSeparated).length;
+  const precedenceOnlyOverloaded = exp3Rows.filter((r) => r.precedenceOnlyCapacityOkByLuck === false).length;
+  const overloads = exp3Rows.map((r) => r.precedenceOnlyWorstOverPct).filter((v) => v !== null);
+  return {
+    n, composedBothOk, capacityOnlyLuckFail, pairSeparated,
+    remainingAfterSeparation: n - pairSeparated,
+    precedenceOnlyOverloaded,
+    worstOverPct: overloads.length ? Math.max(...overloads) : 0.0,
+  };
+})();
+
+// Experiment 4 — multi-objective time-vs-distance trade-off. Mirrors
+// summarize_and_save()'s "Experiment 4" section exactly.
+const exp4Rows = readCsv(EXP4_CSV).map((r) => ({
+  diverges: toBool(r.objectives_diverge),
+  extraDistPct: parseFloat(r.extra_distance_pct_if_time_only),
+  extraTimePct: parseFloat(r.extra_time_pct_if_distance_only),
+}));
+const exp4 = (() => {
+  const n = exp4Rows.length;
+  const differing = exp4Rows.filter((r) => r.diverges);
+  const avg = (arr) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0.0);
+  const max = (arr) => (arr.length ? Math.max(...arr) : 0.0);
+  return {
+    n, nDiffer: differing.length,
+    avgExtraDist: avg(differing.map((r) => r.extraDistPct)),
+    maxExtraDist: max(differing.map((r) => r.extraDistPct)),
+    avgExtraTime: avg(differing.map((r) => r.extraTimePct)),
+    maxExtraTime: max(differing.map((r) => r.extraTimePct)),
+  };
+})();
+
+// Experiment 5 — does time-window position pruning actually help? Mirrors
+// summarize_and_save()'s "Experiment 5" section exactly.
+const exp5Rows = readCsv(EXP5_CSV).map((r) => ({
+  withoutOk: toBool(r.without_pruning_satisfied),
+  withOk: toBool(r.with_pruning_satisfied),
+}));
+const exp5 = {
+  n: exp5Rows.length,
+  withoutOk: exp5Rows.filter((r) => r.withoutOk).length,
+  withOk: exp5Rows.filter((r) => r.withOk).length,
 };
 
 // ---------------------------------------------------------------------
@@ -404,7 +506,133 @@ function footer(slide, n) {
 }
 
 // =======================================================================
-// Slide 7 — Fleet dispatch + demand weights
+// Slide 7 — Experiment 3: composing constraint types together (the actual
+// remaining patent-relevant claim — see README "Honest findings")
+// =======================================================================
+{
+  const s = darkSlide();
+  kicker(s, "Benchmark — experiment 3", { color: CYAN });
+  title(s, "Compose constraints together — that's the real claim", { color: WHITE });
+
+  const stats = [
+    [`${exp3.composedBothOk}/${exp3.n}`, "COMPOSED (capacity AND\nprecedence together) satisfied both", GOOD],
+    [`${exp3.capacityOnlyLuckFail}/${exp3.n}`, "CAPACITY-ONLY (precedence-blind)\nviolated precedence anyway", WARN],
+    [`+${exp3.worstOverPct.toFixed(1)}%`, "worst overload from a\nPRECEDENCE-ONLY (demand-blind) split", WARN],
+  ];
+  const cardW = 3.9, gap = 0.25, startX = 0.6;
+  stats.forEach((st, i) => {
+    const x = startX + i * (cardW + gap);
+    s.addShape(pres.ShapeType.roundRect, {
+      x, y: 2.1, w: cardW, h: 2.6, rectRadius: 0.12,
+      fill: { color: "312E81" }, line: { type: "none" }, shadow: freshShadow(),
+    });
+    s.addText(st[0], {
+      x, y: 2.3, w: cardW, h: 1.15, align: "center", fontFace: FONT_HEAD, fontSize: 40, bold: true,
+      color: st[2], isTextBox: true,
+    });
+    s.addText(st[1], {
+      x: x + 0.2, y: 3.45, w: cardW - 0.4, h: 1.1, align: "center", fontFace: FONT_BODY, fontSize: 12.5,
+      color: "C7D2FE", isTextBox: true, lineSpacingMultiple: 1.2,
+    });
+  });
+
+  s.addText(
+    `Handling one constraint type correctly doesn't mean the fleet-dispatch DECISION stays valid once a `
+    + `second constraint type enters: the demand-blind PRECEDENCE-ONLY split additionally put the two stops `
+    + `on different vehicles entirely in ${exp3.pairSeparated}/${exp3.n} trials — the split itself became `
+    + `incompatible with the rule — and overloaded a vehicle in ${exp3.precedenceOnlyOverloaded}/${exp3.remainingAfterSeparation} `
+    + `of the rest. Composing constraint types into one solve_multi_vehicle call, not any single type alone, `
+    + `is what keeps the whole decision valid — and it's the finding neither prior-art paper in the `
+    + `patent-readiness report covers (see "Why this is patent-shaped").`,
+    { x: 0.6, y: 5.05, w: 12.1, h: 1.65, fontFace: FONT_BODY, fontSize: 14, color: "E0E7FF", isTextBox: true, lineSpacingMultiple: 1.3 }
+  );
+  footer(s, 7);
+}
+
+// =======================================================================
+// Slide 8 — Experiment 4: multi-objective (time vs. distance) trade-off
+// =======================================================================
+{
+  const s = lightSlide();
+  kicker(s, "Benchmark — experiment 4");
+  title(s, "Time and distance are a real trade-off, not one number twice");
+
+  s.addText(
+    "For each waypoint set, the TRUE fastest tour and the TRUE shortest tour are found by exhaustive "
+    + "search, then each is scored against the OTHER objective to measure what optimizing for only one "
+    + "actually costs. combine_objectives() lets the same QUBO solver minimize a weighted sum of both — "
+    + "zero changes to the underlying formulation.",
+    { x: 0.6, y: 1.9, w: 12.1, h: 1.15, fontFace: FONT_BODY, fontSize: 15, color: SLATE, isTextBox: true, lineSpacingMultiple: 1.3 }
+  );
+
+  const stats = [
+    [`${exp4.nDiffer}/${exp4.n}`, "trials where optimizing for only\none objective provably costs the other", VIOLET],
+    [`+${exp4.avgExtraDist.toFixed(1)}% avg\n+${exp4.maxExtraDist.toFixed(1)}% worst`, "extra DISTANCE from\noptimizing time only, when they differ", WARN],
+    [`+${exp4.avgExtraTime.toFixed(1)}% avg\n+${exp4.maxExtraTime.toFixed(1)}% worst`, "extra TIME from\noptimizing distance only, when they differ", WARN],
+  ];
+  const cardW = 3.9, gap = 0.25, startX = 0.6;
+  stats.forEach((st, i) => {
+    const x = startX + i * (cardW + gap);
+    s.addShape(pres.ShapeType.roundRect, {
+      x, y: 3.3, w: cardW, h: 2.9, rectRadius: 0.12,
+      fill: { color: WHITE }, line: { color: "E2E8F0", width: 1 }, shadow: freshShadow(),
+    });
+    s.addText(st[0], {
+      x, y: 3.55, w: cardW, h: 1.35, align: "center", fontFace: FONT_HEAD, fontSize: 26, bold: true,
+      color: st[2], isTextBox: true, lineSpacingMultiple: 1.05,
+    });
+    s.addText(st[1], {
+      x: x + 0.2, y: 4.95, w: cardW - 0.4, h: 1.1, align: "center", fontFace: FONT_BODY, fontSize: 12.5,
+      color: SLATE, isTextBox: true, lineSpacingMultiple: 1.2,
+    });
+  });
+  footer(s, 8);
+}
+
+// =======================================================================
+// Slide 9 — Experiment 5: time-window position pruning — a partial,
+// honestly-scoped answer, not a solved one
+// =======================================================================
+{
+  const s = lightSlide();
+  kicker(s, "Benchmark — experiment 5", { color: WARN });
+  title(s, "Time-window pruning helps — it is not a wall-clock guarantee");
+
+  s.addShape(pres.ShapeType.roundRect, {
+    x: 0.6, y: 1.9, w: 12.1, h: 4.75, rectRadius: 0.12,
+    fill: { color: INK }, line: { type: "none" }, shadow: freshShadow(),
+  });
+
+  const stats = [
+    [`${exp5.withoutOk}/${exp5.n}`, "WITHOUT position pruning, the unconstrained\nschedule already satisfied the window", WARN],
+    [`${exp5.withOk}/${exp5.n}`, "WITH position pruning, the\nwindow was actually satisfied", GOOD],
+  ];
+  const cardW = 5.4, gap = 0.3, startX = 1.0;
+  stats.forEach((st, i) => {
+    const x = startX + i * (cardW + gap);
+    s.addText(st[0], {
+      x, y: 2.2, w: cardW, h: 1.15, align: "center", fontFace: FONT_HEAD, fontSize: 40, bold: true,
+      color: st[2], isTextBox: true,
+    });
+    s.addText(st[1], {
+      x, y: 3.35, w: cardW, h: 0.9, align: "center", fontFace: FONT_BODY, fontSize: 13,
+      color: "C7D2FE", isTextBox: true, lineSpacingMultiple: 1.2,
+    });
+  });
+  s.addShape(pres.ShapeType.line, { x: 1.2, y: 4.4, w: 10.9, h: 0, line: { color: "3730A3", width: 1 } });
+  s.addText(
+    "The QUBO encodes a tour by POSITION, not clock time — so a provably-safe prune of positions that "
+    + "could never satisfy a window measurably helps (never worse than no time-awareness at all) but isn't "
+    + "a satisfaction guarantee: two tours can share the same allowed position while arriving at very "
+    + "different real times. A true wall-clock guarantee needs a different formulation (arc-based variables "
+    + "plus time propagation) — flagged as the highest-formulation-risk roadmap item, not claimed solved here.",
+    { x: 1.0, y: 4.6, w: 11.3, h: 1.85, fontFace: FONT_BODY, fontSize: 13, color: "E0E7FF", isTextBox: true, lineSpacingMultiple: 1.3 }
+  );
+  footer(s, 9);
+}
+
+// =======================================================================
+// Slide 10 — Fleet dispatch + demand weights
 // =======================================================================
 {
   const s = lightSlide();
@@ -436,11 +664,11 @@ function footer(slide, n) {
       color: SLATE, isTextBox: true, lineSpacingMultiple: 1.2,
     });
   });
-  footer(s, 7);
+  footer(s, 10);
 }
 
 // =======================================================================
-// Slide 8 — Feature grid
+// Slide 11 — Feature grid
 // =======================================================================
 {
   const s = lightSlide();
@@ -477,11 +705,11 @@ function footer(slide, n) {
       color: SLATE, isTextBox: true, lineSpacingMultiple: 1.2,
     });
   });
-  footer(s, 8);
+  footer(s, 11);
 }
 
 // =======================================================================
-// Slide 9 — Production readiness
+// Slide 12 — Production readiness
 // =======================================================================
 {
   const s = darkSlide();
@@ -489,7 +717,7 @@ function footer(slide, n) {
   title(s, "Tested, documented, and deployable", { color: WHITE });
 
   const stats = [
-    ["476", "automated tests\n(pytest + Playwright + Node)"],
+    ["491", "automated tests\n(pytest + Playwright + Node)"],
     ["100%", "of the test suite runs\non every push via CI"],
     ["3", "solvers benchmarked side by side\n(2-opt, OR-Tools, QUBO+SA)"],
     ["1", "command to self-host\n(Dockerfile included)"],
@@ -515,11 +743,11 @@ function footer(slide, n) {
     + "so the documentation can't silently drift from what the API actually returns.",
     { x: 0.6, y: 5.1, w: 12.1, h: 1.0, fontFace: FONT_BODY, fontSize: 14, italic: true, color: "C7D2FE", isTextBox: true, lineSpacingMultiple: 1.3 }
   );
-  footer(s, 9);
+  footer(s, 12);
 }
 
 // =======================================================================
-// Slide 10 — Patent / IP angle
+// Slide 13 — Patent / IP angle
 // =======================================================================
 {
   const s = lightSlide();
@@ -547,11 +775,11 @@ function footer(slide, n) {
     points.map((t, i) => ({ text: t, options: { bullet: { code: "25CF" }, breakLine: i < points.length - 1, paraSpaceAfter: 12 } })),
     { x: 0.6, y: 4.15, w: 12.1, h: 2.6, fontFace: FONT_BODY, fontSize: 14.5, color: SLATE, isTextBox: true, lineSpacingMultiple: 1.25 }
   );
-  footer(s, 10);
+  footer(s, 13);
 }
 
 // =======================================================================
-// Slide 11 — Roadmap
+// Slide 14 — Roadmap
 // =======================================================================
 {
   const s = lightSlide();
@@ -562,11 +790,11 @@ function footer(slide, n) {
   const cols = [
     {
       x: 0.6, heading: "Already shipped", color: GOOD,
-      items: ["Precedence constraints", "Numeric time-window constraints", "Multi-vehicle capacity (count or weight)", "OR-Tools + QAOA comparisons", "Live usage analytics", "Docker + OpenAPI"],
+      items: ["Precedence constraints, single-vehicle AND fleet", "Cross-cluster precedence (auto-co-located onto one vehicle)", "Numeric time-window constraints", "Multi-vehicle capacity (count or weight)", "OR-Tools + QAOA comparisons", "Live usage analytics", "Docker + OpenAPI"],
     },
     {
       x: 6.8, heading: "Honest next steps", color: WARN,
-      items: ["A real, paid traffic API (interface already pluggable)", "Cross-cluster precedence/time windows above 9 stops", "Shared, durable analytics storage past a single worker"],
+      items: ["A real, paid traffic API (interface already pluggable)", "Time windows above 9 interior stops (position-based QUBO limit)", "Real wall-clock time-window guarantees (needs a different formulation)", "Shared, durable analytics storage past a single worker"],
     },
   ];
   cols.forEach((c) => {
@@ -586,11 +814,11 @@ function footer(slide, n) {
       { x: c.x + 0.4, y: cardY + 1.05, w: cardW - 0.8, h: cardH - 1.4, fontFace: FONT_BODY, fontSize: 13.5, color: SLATE, isTextBox: true, lineSpacingMultiple: 1.25 }
     );
   });
-  footer(s, 11);
+  footer(s, 14);
 }
 
 // =======================================================================
-// Slide 12 — Thank you / Q&A
+// Slide 15 — Thank you / Q&A
 // =======================================================================
 {
   const s = darkSlide();

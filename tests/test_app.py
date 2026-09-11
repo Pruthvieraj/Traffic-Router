@@ -7,6 +7,7 @@ import pytest
 
 import analytics
 import app as app_module
+from traffic_provider import GoogleRoutesTrafficProvider
 
 
 @pytest.fixture
@@ -210,6 +211,93 @@ def test_solve_rejects_malformed_points_field(client):
     assert "points" in resp.get_json()["error"]
 
 
+# ---------- a REAL live-traffic provider through the live endpoints (product-audit item) ----------
+#
+# GoogleRoutesTrafficProvider is unit-tested in isolation
+# (tests/test_traffic_provider.py) — request construction, response
+# parsing, the unmocked no-key failure path — but until now nothing ever
+# swapped it in for app.py's module-level `_traffic_provider` and actually
+# hit a live endpoint with it, for EITHER /api/solve or /api/solve_fleet.
+# These tests close that gap for both: the solved cost must reflect the
+# FAKE traffic-aware durations below, not the default simulated congestion
+# model (which would give a different number for the same free-flow
+# matrix) — proof the `points` field and the TRAFFIC_PROVIDER-selected
+# global really reach the provider through a real request, not just that
+# the provider works when called directly.
+
+class _FakeGoogleResponse:
+    def __init__(self, status_code, payload):
+        self.status_code = status_code
+        self._payload = payload
+        self.text = str(payload)
+
+    def json(self):
+        return self._payload
+
+
+class _FakeGoogleSession:
+    def __init__(self, response):
+        self._response = response
+        self.calls = []
+
+    def post(self, url, headers=None, json=None, timeout=None):
+        self.calls.append({"url": url, "headers": headers, "json": json, "timeout": timeout})
+        return self._response
+
+
+def _three_point_google_response():
+    # Genuinely asymmetric durations (real one-way streets) — see
+    # tests/test_traffic_provider.py, same fixture data.
+    return [
+        {"originIndex": 0, "destinationIndex": 1, "duration": "600s", "status": {}},
+        {"originIndex": 0, "destinationIndex": 2, "duration": "900s", "status": {}},
+        {"originIndex": 1, "destinationIndex": 0, "duration": "650s", "status": {}},
+        {"originIndex": 1, "destinationIndex": 2, "duration": "500s", "status": {}},
+        {"originIndex": 2, "destinationIndex": 0, "duration": "870s", "status": {}},
+        {"originIndex": 2, "destinationIndex": 1, "duration": "480s", "status": {}},
+    ]
+
+
+def test_solve_actually_uses_a_real_injected_traffic_provider_end_to_end(client, monkeypatch):
+    session = _FakeGoogleSession(_FakeGoogleResponse(200, _three_point_google_response()))
+    provider = GoogleRoutesTrafficProvider(api_key="test-key", session=session)
+    monkeypatch.setattr(app_module, "_traffic_provider", provider)
+
+    matrix = [[0, 1, 1], [1, 0, 1], [1, 1, 0]]  # free-flow content is irrelevant to this provider
+    points = [[12.97, 77.59], [12.93, 77.62], [12.91, 77.63]]
+    resp = client.post("/api/solve", json={
+        "matrix": matrix, "method": "classical", "hour": 18.5, "points": points,
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    # Only one possible path (n=3, start=0 end=2 fixed): 0 -> 1 -> 2, cost =
+    # duration(0,1) + duration(1,2) = 600s + 500s = 10.0 + 8.333... min.
+    assert data["order"] == [0, 1, 2]
+    assert data["cost_minutes"] == pytest.approx(18.3, abs=0.1)
+    assert len(session.calls) == 1  # a real request really was built and sent through this endpoint
+
+
+def test_solve_fleet_actually_uses_a_real_injected_traffic_provider_end_to_end(client, monkeypatch):
+    session = _FakeGoogleSession(_FakeGoogleResponse(200, _three_point_google_response()))
+    provider = GoogleRoutesTrafficProvider(api_key="test-key", session=session)
+    monkeypatch.setattr(app_module, "_traffic_provider", provider)
+
+    matrix = [[0, 1, 1], [1, 0, 1], [1, 1, 0]]
+    points = [[12.97, 77.59], [12.93, 77.62], [12.91, 77.63]]
+    resp = client.post("/api/solve_fleet", json={
+        "matrix": matrix, "method": "classical", "hour": 18.5, "n_vehicles": 1, "points": points,
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    # depot=0, closed loop 0 -> 1 -> 2 -> 0 (32.83 min) beats 0 -> 2 -> 1 ->
+    # 0 (33.83 min) under these fake durations — the optimal solver must
+    # find it, proving the fake matrix (not the simulated model) drove the
+    # actual solve, not just got threaded through unused.
+    assert data["vehicles"][0]["order"] == [0, 1, 2, 0]
+    assert data["total_cost_minutes"] == pytest.approx(32.8, abs=0.1)
+    assert len(session.calls) == 1
+
+
 def test_solve_scales_past_old_ten_stop_limit(client):
     """This exact request would have been REJECTED before the clustering
     feature (old MAX_STOPS was 10) — confirms the scaling upgrade actually
@@ -364,6 +452,69 @@ def test_solve_precedence_and_incident_compose_in_one_request(client):
     assert order.index(3) < order.index(1)
 
 
+# ---------- /api/explain_precedence_impact (product-audit item: wiring
+# src/explain.py's explain_open_path_precedence_impact into a real
+# endpoint, not just a tested library function) ----------
+
+def test_explain_precedence_impact_reports_a_real_before_after_comparison(client):
+    matrix = _six_point_matrix()
+    resp = client.post("/api/explain_precedence_impact", json={
+        "matrix": matrix, "method": "quantum", "precedence": [[3, 1]],
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["path_with_constraint"][0] == 0
+    assert data["path_with_constraint"][-1] == 5
+    order = data["path_with_constraint"]
+    assert order.index(3) < order.index(1)
+    assert data["cost_with_constraint"] >= data["cost_without_constraint"] - 1.0  # small solver-noise tolerance
+    assert data["extra_cost"] == pytest.approx(data["cost_with_constraint"] - data["cost_without_constraint"], abs=0.05)
+
+
+def test_explain_precedence_impact_works_for_classical_method_too(client):
+    matrix = _six_point_matrix()
+    resp = client.post("/api/explain_precedence_impact", json={
+        "matrix": matrix, "method": "classical", "precedence": [[2, 4]],
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    order = data["path_with_constraint"]
+    assert order.index(2) < order.index(4)
+
+
+def test_explain_precedence_impact_rejects_empty_precedence(client):
+    matrix = _six_point_matrix()
+    resp = client.post("/api/explain_precedence_impact", json={"matrix": matrix, "method": "classical"})
+    assert resp.status_code == 400
+    assert "non-empty" in resp.get_json()["error"]
+
+
+def test_explain_precedence_impact_rejects_an_invalid_precedence_pair(client):
+    matrix = _six_point_matrix()
+    resp = client.post("/api/explain_precedence_impact", json={
+        "matrix": matrix, "method": "classical", "precedence": [[5, 2]],  # something can't be required after End
+    })
+    assert resp.status_code == 400
+    assert "End" in resp.get_json()["error"]
+
+
+def test_explain_precedence_impact_rejects_above_cluster_size(client):
+    n = 20
+    matrix = [[abs(i - j) * 37.0 for j in range(n)] for i in range(n)]
+    resp = client.post("/api/explain_precedence_impact", json={
+        "matrix": matrix, "method": "classical", "precedence": [[2, 4]],
+    })
+    assert resp.status_code == 400
+    assert "interior" in resp.get_json()["error"].lower()
+
+
+def test_explain_precedence_impact_records_as_an_error_in_analytics_when_it_fails(client):
+    analytics._reset_for_tests()
+    matrix = _six_point_matrix()
+    client.post("/api/explain_precedence_impact", json={"matrix": matrix, "method": "classical"})  # no precedence -> 400
+    assert analytics.snapshot()["errors"] == 1
+
+
 # ---------- /api/solve_fleet (multi-vehicle dispatch demo) ----------
 
 def test_solve_fleet_valid_request(client):
@@ -458,10 +609,14 @@ def test_solve_fleet_rejects_invalid_max_stops_per_vehicle(client):
 
 # ---------- precedence in fleet mode (patent-readiness checklist item 8) ----------
 #
-# Precedence only has a coherent meaning in fleet mode when the fleet split
-# keeps both stops of a pair on the same vehicle — these tests cover the
-# success path (forced onto one vehicle) and the honest failure path (split
-# across vehicles must be a clean 400, never a silently-wrong route or a 500).
+# Precedence only has a coherent meaning in fleet mode when both stops of a
+# pair end up on the same vehicle — these tests cover the success path
+# (already forced onto one vehicle), the cross-cluster-precedence case
+# (product-audit item: the fleet split initially separated the pair, so it
+# must get actively co-located instead of rejected), and the one case that's
+# still a genuine, honest failure — an active hard capacity cap that truly
+# can't absorb co-locating the pair — which must surface as a clean 400,
+# never a silently-wrong route or a 500.
 
 def _seven_point_fleet_matrix():
     n = 7  # depot (0) + 6 stops
@@ -506,19 +661,40 @@ def test_solve_fleet_rejects_malformed_precedence(client):
     assert resp.status_code == 400
 
 
-def test_solve_fleet_precedence_split_across_vehicles_is_a_clean_400(client):
-    """When the fleet split happens to put the two stops on different
-    vehicles, this must surface as a client-facing 400 with a clear
-    explanation — not an unhandled 500 — since solve_multi_vehicle raises
-    ValueError for exactly this case and app.py's except ValueError branch
-    is what's supposed to turn that into a 400."""
+def test_solve_fleet_precedence_split_across_vehicles_gets_co_located(client):
+    """Cross-cluster precedence (product-audit item): when the fleet split
+    happens to put the two stops on different vehicles, /api/solve_fleet
+    must now actively co-locate them onto one vehicle and satisfy the rule
+    — not reject the request just because the split didn't get lucky."""
     matrix = _seven_point_fleet_matrix()
     resp = client.post("/api/solve_fleet", json={
-        "matrix": matrix, "method": "classical", "n_vehicles": 6,  # one stop per vehicle
+        "matrix": matrix, "method": "classical", "n_vehicles": 6,  # one stop per vehicle, before co-location
+        "precedence": [[1, 2]],
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["precedence_applied"] is True
+    assert data["precedence_satisfied"] is True
+    owning_vehicle = next(v for v in data["vehicles"] if 1 in v["order"])
+    assert 2 in owning_vehicle["order"], "the two stops must have been co-located onto one vehicle"
+    # Every stop still visited exactly once across the (possibly smaller) fleet.
+    all_visited = sorted(s for v in data["vehicles"] for s in v["order"] if s != 0)
+    assert all_visited == [1, 2, 3, 4, 5, 6]
+
+
+def test_solve_fleet_precedence_raises_a_clean_400_when_capacity_truly_cant_absorb_it(client):
+    """The one precedence-in-fleet-mode case that's still a genuine, honest
+    failure: an explicit hard capacity cap too small to ever fit a
+    co-located pair on one vehicle. Must be a clean 400, never a silently-
+    wrong route (that would violate the capacity promise) or an unhandled 500."""
+    matrix = _seven_point_fleet_matrix()
+    resp = client.post("/api/solve_fleet", json={
+        "matrix": matrix, "method": "classical", "n_vehicles": 6,
+        "max_stops_per_vehicle": 1,  # 1 stop/vehicle can never fit a co-located pair
         "precedence": [[1, 2]],
     })
     assert resp.status_code == 400
-    assert "vehicle" in resp.get_json()["error"].lower()
+    assert "capacity" in resp.get_json()["error"].lower()
 
 
 # ---------- per-stop demand weights (demands + vehicle_capacity) ----------

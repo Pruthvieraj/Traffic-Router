@@ -47,11 +47,19 @@ Also shown alongside it: each time-window rule's real checked outcome
 (`_timeWindowChecksHtml()` — see "Time-window constraints" below) and a
 clearly-labeled-as-an-estimate fuel/CO2 figure (`_fuelCo2Html()`, generic
 average-petrol-car constants disclosed as such, not measured for any real
-vehicle). **Honest gap:** `explain_precedence_impact`'s before/after
-comparison still isn't called from either endpoint, since it means a
-second solve (real added latency for a live click) — it's available as a
-library function and demonstrated in `tests/test_explain.py`, not yet
-exposed as its own API route or UI control.
+vehicle). **`explain_precedence_impact`'s before/after comparison is now
+wired in** (product-audit follow-up) — for the fixed-start/fixed-end
+routes this UI actually solves, via a new sibling function,
+`explain_open_path_precedence_impact` (`src/explain.py`), exposed as
+`POST /api/explain_precedence_impact` and a "What does this rule cost me?"
+button in the Precedence panel (single-vehicle mode only). Deliberately a
+separate endpoint, not folded into every `/api/solve` response — it means
+solving the same instance twice (real added latency), so a visitor only
+pays for it by explicitly asking. The ORIGINAL `explain_precedence_impact`
+(closed-loop, for the fixed-landmark `main.py` demo's TSP, not this
+click-router's open-path routes) is still exactly what it always was: a
+tested library function with no live caller, since that demo has no
+server or UI to call it from.
 
 ## Time-window constraints — a partial, honestly-scoped answer, not a solved one
 

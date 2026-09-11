@@ -156,6 +156,23 @@ needed. This sandbox's own real, unmocked lack of `GOOGLE_ROUTES_API_KEY`
 is used to test the real "no key configured" failure path, the same way
 the QPU tests use this sandbox's real lack of a D-Wave token.
 
+**Now also verified at the Flask level, for both endpoints, not just the
+provider class in isolation.** `tests/test_app.py`'s
+`test_solve_actually_uses_a_real_injected_traffic_provider_end_to_end` and
+`test_solve_fleet_actually_uses_a_real_injected_traffic_provider_end_to_end`
+monkeypatch `app.py`'s module-level `_traffic_provider` to a real
+`GoogleRoutesTrafficProvider` wired to a fake session, then hit `/api/solve`
+and `/api/solve_fleet` exactly as a browser would, asserting the returned
+route order and cost match hand-computed values derived from the fake
+session's canned response and that exactly one real HTTP call was built and
+sent. This closes the one gap that was previously untested: `solve_fleet()`
+already called `_traffic_provider.get_congested_matrix(...)` identically to
+`solve()`, but nothing had ever proven that end-to-end through the actual
+live endpoint — it's not a new code path, it's newly-proven coverage of an
+existing one. What still can't be demonstrated in this sandbox is the same
+as above: a real network call to Google's paid API, which needs a real key
+and billing this environment doesn't have.
+
 Swapping in a *different* real provider (TomTom/HERE/Mapbox) is still
 "write one new class in this file, change one env var" — provably, since
 `app.py` never imports `congestion.py` at all anymore.
@@ -221,11 +238,15 @@ alongside the rest of that file) decides that by comparing each vehicle's
 order tick-to-tick, not just the fleet total. This needed `/api/solve_fleet`
 to accept `incident_pairs`/`incident_multiplier` too (previously
 `/api/solve`-only) — see app.py's `solve_fleet()` and
-`tests/test_app.py`'s `test_solve_fleet_with_incident_pairs_*` tests. What's
-still NOT done: precedence rules aren't sent to `/api/solve_fleet` even on
-a manual fleet solve (see "Precedence" above), so the live loop doesn't
-invent that either — it only re-solves whatever a manual fleet solve
-already sends. Tested at three levels: `fleetOrderChanged()`'s own
+`tests/test_app.py`'s `test_solve_fleet_with_incident_pairs_*` tests.
+**Precedence now flows through here too** (product-audit follow-up): a
+manual fleet solve sends `precedence: precedenceRules` on the request the
+exact same way `/api/solve` does, the Precedence panel stays available in
+fleet mode instead of being hidden, and the live-reopt loop's fleet tick
+sends the same rules on every re-solve — see "Precedence" below and
+`clustering._co_locate_precedence_pairs` for how a pair the fleet split
+initially separates gets actively co-located onto one vehicle instead of
+being rejected (cross-cluster precedence). Tested at three levels: `fleetOrderChanged()`'s own
 decision logic is unit tested (`tests/frontend/route_helpers.test.js`),
 `/api/solve_fleet`'s new `incident_pairs` support is tested via the Flask
 test client (`tests/test_app.py`), and the actual end-to-end dispatch
@@ -487,38 +508,55 @@ judge's first ten seconds are visual before they're technical:
   mirroring the pattern `build_tsp_bqm` already used for the closed-loop
   case), not a filter applied to the result afterward. Honest scope: only
   supported up to the same interior-stop count a single QUBO can solve
-  directly (`CLUSTER_SIZE`, 9 by default) — above that, stops get split
-  across independently-solved clusters and a cross-cluster precedence pair
-  can't be reliably enforced, so the API returns a clear 400 rather than
-  silently ignoring it. Rules track the actual stops as the route gets
-  (re-)solved (remapped through the solved order automatically) but are
-  dropped if you add or remove a stop, since positions shift. See
-  `tests/test_qubo_tsp.py`, `tests/test_clustering.py`, `tests/test_app.py`
-  (including `test_solve_precedence_and_incident_compose_in_one_request`,
-  which proves precedence and incident-triggered re-optimization actually
-  work TOGETHER in one request, not just independently), and
+  directly (`CLUSTER_SIZE`, 9 by default) — above that (single-vehicle mode
+  only; see below for fleet mode), stops get split across independently-
+  solved clusters and a cross-cluster precedence pair can't be reliably
+  enforced, so the API returns a clear 400 rather than silently ignoring
+  it. Rules track the actual stops as the route gets (re-)solved (remapped
+  through the solved order automatically) but are dropped if you add or
+  remove a stop, since positions shift. See `tests/test_qubo_tsp.py`,
+  `tests/test_clustering.py`, `tests/test_app.py` (including
+  `test_solve_precedence_and_incident_compose_in_one_request`, which
+  proves precedence and incident-triggered re-optimization actually work
+  TOGETHER in one request, not just independently), and
   `tests/test_layout.py`'s precedence tests.
 
-  `/api/solve_fleet` (multi-vehicle mode) now accepts the same
-  `precedence` field too — `solve_multi_vehicle` in `src/clustering.py`
-  enforces it on whichever vehicle a pair's two stops both land on, by
-  solving that vehicle's leg with the depot pinned as both the fixed start
-  *and* fixed end of the already-tested open-path solver, instead of the
+  `/api/solve_fleet` (multi-vehicle mode) accepts the same `precedence`
+  field too, and — as of the product-audit follow-up pass — the click-map
+  UI's Precedence panel is available in fleet mode as well, not hidden.
+  **Cross-cluster precedence, resolved:** which vehicle a stop lands on is
+  decided by clustering *before* precedence is ever looked at, so a pair
+  can easily start out on two different vehicles — `solve_multi_vehicle`
+  in `src/clustering.py` no longer rejects that outright. Instead,
+  `_co_locate_precedence_pairs` moves the second stop of any such pair
+  onto the first stop's vehicle (a single-point move, like the existing
+  capacity rebalancer makes, not a whole-cluster merge — so an unrelated
+  stop that merely shared a cluster is never pulled along), and the pair
+  is then enforced exactly like an already-same-vehicle pair: by solving
+  that vehicle's leg with the depot pinned as both the fixed start *and*
+  fixed end of the already-tested open-path solver, instead of the
   ordinary closed-loop one (a closed loop's position labeling is only
   unique up to rotation, which would otherwise make "before" ill-defined
-  after the depot-first display rotation every vehicle's tour gets). Since
-  which vehicle a stop lands on is decided by clustering *before*
-  precedence is ever looked at, a pair split across two vehicles can't be
-  enforced — the API returns a clear 400 naming both vehicles rather than
-  silently dropping the rule. See `tests/test_clustering.py`'s
-  precedence-in-fleet-mode tests and `tests/test_app.py`'s
-  `test_solve_fleet_*precedence*` tests. The click-map UI's Precedence
-  button still only appears in single-vehicle mode, on purpose: the UI
-  can't know in advance which vehicle a stop will be clustered onto, so
-  offering the rule builder in fleet mode would mean rules that
-  unpredictably 400 depending on how the split happens to fall — an API
-  consumer that already knows its own stop-to-vehicle assignment (or that
-  pins `n_vehicles=1`) doesn't have that problem.
+  after the depot-first display rotation every vehicle's tour gets). The
+  one case that still raises a clean 400 is a genuine, different
+  conflict: an active hard capacity cap (`max_stops_per_vehicle` /
+  `vehicle_capacity`) too small to ever absorb the co-located pair — that
+  can't be silently worked around without breaking the capacity promise.
+  See `tests/test_clustering.py`'s precedence-in-fleet-mode tests,
+  `tests/test_app.py`'s `test_solve_fleet_*precedence*` tests, and
+  `tests/test_layout.py`'s `test_fleet_solve_with_precedence_is_satisfied_end_to_end`
+  for the real-backend, real-browser version of the same claim.
+
+  **"What does this rule cost me?"** — a button in the Precedence panel
+  (single-vehicle mode only) calls a new `POST /api/explain_precedence_impact`
+  endpoint, which solves the SAME route twice server-side (once with every
+  current rule enforced, once with none) and reports the real extra cost —
+  see `src/explain.py`'s `explain_open_path_precedence_impact`, the
+  open-path analogue of the pre-existing `explain_precedence_impact`
+  (which is closed-loop-only, for the fixed-landmark `main.py` demo, not
+  the click-router's fixed-start/fixed-end routes). A separate endpoint on
+  purpose — it's a second solve, real added latency a visitor should only
+  pay for by explicitly asking, not on every ordinary route solve.
 - **Method comparison — quantum-inspired vs. classical, side by side.** A
   "Compare methods" button (single-vehicle mode only) solves your CURRENT
   stops with both methods in parallel (`compareMethods()` in

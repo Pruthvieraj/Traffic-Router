@@ -4,9 +4,10 @@
 
 ## A pitch deck, generated from the project's own real numbers
 
-`generate_pitch_deck.js` builds `output/pitch_deck.pptx` — a 12-slide,
+`generate_pitch_deck.js` builds `output/pitch_deck.pptx` — a 15-slide,
 fully-designed deck (title, the problem, the 5-step pipeline, both quantum
-paradigms, both benchmark experiments with a real chart, multi-vehicle
+paradigms, all five benchmark experiments — Experiment 1 with a real chart,
+Experiments 2-5 each with their own real stat cards — multi-vehicle
 dispatch, a feature grid, the test/CI numbers, the patent angle, roadmap,
 and a closing slide) — directly from this project's own regenerated
 benchmark CSVs, not hand-typed numbers copy-pasted once and left to drift.
@@ -19,25 +20,17 @@ node generate_pitch_deck.js
 ```
 
 That writes `output/pitch_deck.pptx`, ready to open in PowerPoint or
-Google Slides. Every number on the two benchmark slides — the Experiment 1
-chart and Experiment 2's `15/15` / `8/15` / `+31.9%` stat callouts — is
-read straight out of `output/experiment_1_unconstrained.csv` and
-`output/experiment_2_constrained.csv`, computed the same way
-`src/benchmark.py`'s own `summarize_and_save()` does, so the deck can
-never claim a number the benchmark script and test suite don't actually
-produce. Re-run both commands any time the benchmark, feature set, or test
-count changes, and the deck regenerates in sync rather than going stale.
-
-**Honest gap:** `generate_pitch_deck.js` doesn't have Experiment 3, 4, or 5
-slides yet — it still only reads the two original CSVs. The
-composed-constraint numbers are real and in `output/experiment_3_composed.csv`,
-the time-vs-distance trade-off numbers are real and in
-`output/experiment_4_multi_objective.csv`, and the time-window
-pruning-effectiveness numbers are real and in
-`output/experiment_5_time_windows.csv`, but all three are currently
-something you'd add to the deck by hand (or ask for slides to be generated
-from those CSVs the same way) rather than something the script produces
-automatically.
+Google Slides. Every number on all five benchmark slides — the Experiment 1
+chart, Experiment 2's `15/15` / `8/15` / `+31.9%` stat callouts, Experiment
+3's composed-vs-isolated constraint numbers, Experiment 4's time/distance
+trade-off percentages, and Experiment 5's pruning-vs-guarantee counts — is
+read straight out of `output/experiment_{1..5}_*.csv`, computed the same
+way `src/benchmark.py`'s own `summarize_and_save()` does (see
+`generate_pitch_deck.js`'s own `exp3`/`exp4`/`exp5` aggregation, which
+mirrors that function's logic field-for-field), so the deck can never claim
+a number the benchmark script and test suite don't actually produce.
+Re-run both commands any time the benchmark, feature set, or test count
+changes, and the deck regenerates in sync rather than going stale.
 
 ## How to pitch this at your internal round / to SIH judges
 
@@ -102,21 +95,24 @@ this is knowing which half is done:
   unmocked "no token configured" failure, not a live hardware run.
 - **Real live traffic** — `src/traffic_provider.py`'s
   `GoogleRoutesTrafficProvider` is a real, working integration with
-  Google's Routes API (see [Traffic-awareness](live-app.md)). What's NOT done: running
-  it live, same reason as the QPU above (needs your own
-  `GOOGLE_ROUTES_API_KEY` and Google Cloud billing setup) — AND the
-  UVH-26 vehicle-density-calibration path below, which is a genuinely
-  different, still-open idea (calibrating the *simulated* model from real
-  images, rather than replacing it with a live API).
+  Google's Routes API, now verified end-to-end at the Flask level for
+  BOTH `/api/solve` and `/api/solve_fleet` (a real injected provider
+  monkeypatched in, asserting the returned route and cost, not just that
+  the provider class works in isolation — see [Traffic-awareness](live-app.md)).
+  What's NOT done: running it against the real, live, paid API, same
+  reason as the QPU above (needs your own `GOOGLE_ROUTES_API_KEY` and
+  Google Cloud billing setup) — AND the UVH-26 vehicle-density-calibration
+  path below, which is a genuinely different idea (calibrating the
+  *simulated* model from real images, rather than replacing it with a live
+  API).
 - **Continuous re-optimization** — the "Live re-optimize" topbar toggle
   (see [Continuous re-optimization](live-app.md)) repeatedly re-solves against a
   simulated clock, not a real live feed, in BOTH single-vehicle and fleet
-  mode (fleet-mode support was added after the section above was first
-  written — see [Fleet mode is now covered too](live-app.md) there). What's NOT done:
-  anything resembling a real vehicle's live GPS position feeding back into
-  the loop (there is no real vehicle here to track), and precedence rules
-  in the fleet-mode loop (the manual fleet solve itself doesn't send them
-  yet either).
+  mode, and now sends precedence rules on every tick in both modes too
+  (the manual fleet solve and the fleet-mode live-reopt loop both send
+  them — see "Precedence" in [`docs/live-app.md`](live-app.md)). What's
+  NOT done: anything resembling a real vehicle's live GPS position feeding
+  back into the loop (there is no real vehicle here to track).
 - **Using real map data**: `src/city_graph.py` has `build_live_osm_graph()`
   using `osmnx` to pull an actual OpenStreetMap road network for any place
   name — swap it in for `build_demo_graph()` once you've confirmed your
@@ -126,13 +122,27 @@ this is knowing which half is done:
   that's *congestion* on top of it.
 - **Calibrating congestion from real imagery**: `src/congestion.py`'s
   synthetic rush-hour model is still a placeholder in its own right (a
-  separate, still-open idea from the `google_routes` live-API path above
-  — this one calibrates the SIMULATED model's numbers rather than
-  replacing it). IISc's **UVH-26** dataset
-  (https://huggingface.co/datasets/iisc-aim/UVH-26) — 26,646 annotated
-  Bengaluru traffic-camera images across 2,800 CCTV cameras, released
-  November 2025 — is a strong, free, real-Indian-data source: running a
-  vehicle-density pass on even a handful of its images to calibrate a few
-  junctions' congestion multipliers would meaningfully strengthen the "real
-  data" story in your pitch. Nobody has done this yet in this project.
+  separate idea from the `google_routes` live-API path above — this one
+  calibrates the SIMULATED model's numbers rather than replacing it).
+  IISc's **UVH-26** dataset (https://huggingface.co/datasets/iisc-aim/UVH-26)
+  — 26,646 annotated Bengaluru traffic-camera images across 2,800 CCTV
+  cameras, released November 2025, COCO-format bounding boxes across 14
+  Indian-traffic vehicle classes — is a strong, free, real-Indian-data
+  source, and `src/vehicle_density_calibration.py` is a real, tested
+  pipeline for turning exactly that annotation format into a congestion
+  multiplier (vehicle-count extraction, a disclosed density-to-multiplier
+  scale, and blending with the synthetic model), plus a runnable
+  `calibrate_from_uvh26.py` CLI at the repo root. **What's genuinely still
+  open, and why**: this project's own dev sandbox cannot download the
+  90GB UVH-26 dataset to run that pipeline against real images — confirmed
+  directly, huggingface.co and its CDN (and fallback hosts like GitHub)
+  all get rejected at the network layer by this sandbox's egress policy,
+  independent of the dataset being free. So the calibration LOGIC is real
+  and tested (mirroring UVH-26's documented schema in its own test
+  fixture), but nobody has run it against the actual dataset yet — that
+  needs a machine with normal internet access, which this sandbox
+  deliberately doesn't have. If you have internet access wherever you're
+  reading this, you're one `pip install huggingface_hub` and a few
+  minutes away from being the first to actually run it — see
+  `calibrate_from_uvh26.py`'s docstring for the exact steps.
 

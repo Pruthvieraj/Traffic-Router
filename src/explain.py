@@ -128,6 +128,53 @@ def explain_precedence_impact(
     }
 
 
+def explain_open_path_precedence_impact(
+    W: np.ndarray, start_idx: int, end_idx: int, precedence: list[tuple[int, int]],
+    method: str = "quantum", num_reads: int = 400, seed: int = 1,
+) -> dict:
+    """The open-path analogue of explain_precedence_impact (above), for the
+    fixed-start/fixed-end routes /api/solve actually solves — the click-
+    router UI's precedence panel — rather than the closed-loop TSP
+    explain_precedence_impact was originally written for. Solves the SAME
+    open-path instance twice — once with no precedence at all, once with
+    `precedence` enforced — and reports the real extra cost THIS specific
+    rule adds to THIS specific route, on THIS specific matrix.
+
+    `method="classical"` uses the same nearest-neighbor + 2-opt (-with-
+    repair) baseline /api/solve itself would use for that method; anything
+    else uses the quantum-inspired QUBO solver — same method contract as
+    clustering.solve_open_path_scalable. Like explain_precedence_impact,
+    this adds no solver logic of its own, only the before/after comparison.
+    """
+    from qubo_tsp import solve_open_path_quantum_inspired
+    from baseline import nearest_neighbor_2opt_open_path, nearest_neighbor_2opt_open_path_with_precedence_repair
+
+    if not precedence:
+        raise ValueError("precedence must be a non-empty list of (u, v) pairs.")
+
+    if method == "classical":
+        without = nearest_neighbor_2opt_open_path(W, start_idx, end_idx)
+        with_constraint = nearest_neighbor_2opt_open_path_with_precedence_repair(W, start_idx, end_idx, precedence)
+    else:
+        without = solve_open_path_quantum_inspired(W, start_idx, end_idx, num_reads=num_reads, seed=seed)
+        with_constraint = solve_open_path_quantum_inspired(
+            W, start_idx, end_idx, num_reads=num_reads, seed=seed, precedence=precedence,
+        )
+
+    extra_cost = with_constraint["cost"] - without["cost"]
+    extra_pct = (extra_cost / without["cost"] * 100) if without["cost"] > 0 else 0.0
+
+    return {
+        "precedence": list(precedence),
+        "path_without_constraint": without["path"],
+        "cost_without_constraint": round(without["cost"], 2),
+        "path_with_constraint": with_constraint["path"],
+        "cost_with_constraint": round(with_constraint["cost"], 2),
+        "extra_cost": round(extra_cost, 2),
+        "extra_cost_pct": round(extra_pct, 1),
+    }
+
+
 def explain_fleet(
     result: dict, W: np.ndarray, waypoint_names: list[str] | None = None,
     demands: dict[int, float] | None = None, vehicle_capacity: float | None = None,

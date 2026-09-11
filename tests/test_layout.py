@@ -757,16 +757,108 @@ def test_precedence_panel_rejects_duplicate_and_reversed_rules(live_server, brow
     assert rules == [[1, 2]]  # neither the duplicate nor the reverse got added
 
 
-def test_precedence_button_hides_in_fleet_mode(live_server, browser):
+def test_precedence_button_and_rules_work_in_fleet_mode_too(live_server, browser):
+    """Cross-cluster precedence (product-audit item): precedence used to be
+    single-vehicle-mode only in the UI, hidden and cleared the moment you
+    switched to fleet mode. It's now available in both — the button stays
+    visible, an existing rule survives the mode switch, and the eligible-
+    stop range widens to include every non-depot stop (fleet mode has no
+    fixed "End", only a Depot at index 0)."""
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
-    page.click("#optionsBtn")  # Precedence/Fleet now live in the Options drawer
-    assert page.eval_on_selector("#precedenceBtn", "el => getComputedStyle(el).display") != "none"
+    for x, y in [(200, 200), (300, 200), (400, 200), (500, 200)]:
+        page.click("#map", position={"x": x, "y": y})
+    page.wait_for_function("clickedPoints.length === 4")
 
-    page.select_option("#vehicleSelect", "2")
-    display = page.eval_on_selector("#precedenceBtn", "el => getComputedStyle(el).display")
+    page.click("#optionsBtn")  # Precedence/Fleet now live in the Options drawer
+    page.click("#precedenceBtn")
+    page.wait_for_function("document.getElementById('precedencePanel').style.display === 'flex'")
+    page.select_option("#precUSelect", "1")
+    page.select_option("#precVSelect", "2")
+    page.click("#precAddBtn")
+    assert page.evaluate("precedenceRules") == [[1, 2]]
+
+    page.select_option("#vehicleSelect", "2")  # switch into fleet mode
+    assert page.eval_on_selector("#precedenceBtn", "el => getComputedStyle(el).display") != "none"
+    assert page.evaluate("precedenceRules") == [[1, 2]]  # the rule survives the mode switch
+
+    page.click("#precedenceBtn")
+    page.wait_for_function("document.getElementById('precedencePanel').style.display === 'flex'")
+    # Fleet mode: point 0 is the Depot, everything else is an eligible stop —
+    # including index 3, which would have been the fixed "End" before.
+    options = page.eval_on_selector_all("#precUSelect option", "els => els.map(e => e.value)")
+    assert options == ["1", "2", "3"]
     page.close()
-    assert display == "none"
+
+
+def test_fleet_solve_with_precedence_is_satisfied_end_to_end(live_server, browser):
+    """Cross-cluster precedence + precedence-in-fleet-mode (product-audit
+    items), exercised through the real backend (only OSRM is stubbed —
+    /api/solve_fleet itself is never mocked): a precedence rule that the
+    fleet split may well put on two different vehicles at first must still
+    come back satisfied, with the "Why this route?" panel showing the
+    checkmark, not a violated row."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    _stub_osrm(page, 5)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # Method/Fleet select now live in the Options drawer
+    page.select_option("#methodSelect", "classical")
+    page.select_option("#vehicleSelect", "3")
+    page.evaluate("""
+        () => { addPoint(12.97, 77.59); addPoint(12.95, 77.60); addPoint(12.93, 77.61); addPoint(12.91, 77.62); addPoint(12.90, 77.63); }
+    """)
+
+    page.click("#precedenceBtn")
+    page.wait_for_function("document.getElementById('precedencePanel').style.display === 'flex'")
+    page.select_option("#precUSelect", "1")
+    page.select_option("#precVSelect", "4")
+    page.click("#precAddBtn")
+    page.click("#precedenceClose")
+
+    page.click("#solveBtn")
+    page.wait_for_function("document.getElementById('stats').style.display === 'block'", timeout=10000)
+
+    stats_html = page.inner_html("#stats")
+    page.close()
+    assert "before" in stats_html
+    assert "violated" not in stats_html  # the rule must actually be satisfied, not just attempted
+
+
+def test_precedence_impact_button_shows_a_real_before_after_comparison(live_server, browser):
+    """Product-audit item: explain_open_path_precedence_impact (src/explain.py)
+    used to exist only as a tested library function, never reachable from
+    the UI. Exercised through the real backend end-to-end: adding a
+    precedence rule reveals the "What does this rule cost me?" button, and
+    clicking it shows a genuine before/after cost comparison."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    _stub_osrm(page, 4)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # Method select now lives in the Options drawer
+    page.select_option("#methodSelect", "classical")
+    page.evaluate("""
+        () => { addPoint(12.97, 77.59); addPoint(12.95, 77.60); addPoint(12.93, 77.61); addPoint(12.91, 77.62); }
+    """)
+
+    page.click("#precedenceBtn")
+    page.wait_for_function("document.getElementById('precedencePanel').style.display === 'flex'")
+    assert page.eval_on_selector("#precImpactBtn", "el => getComputedStyle(el).display") == "none"
+
+    page.select_option("#precUSelect", "1")
+    page.select_option("#precVSelect", "2")
+    page.click("#precAddBtn")
+    assert page.eval_on_selector("#precImpactBtn", "el => getComputedStyle(el).display") != "none"
+
+    page.click("#precImpactBtn")
+    page.wait_for_function(
+        "document.getElementById('precedenceImpact').textContent.includes('Real extra cost')", timeout=10000,
+    )
+    impact_text = page.inner_text("#precedenceImpact")
+    page.close()
+    assert "Without this rule" in impact_text
+    assert "With this rule" in impact_text
+    assert "min" in impact_text
 
 
 def test_precedence_rules_remap_after_a_solve_and_drop_on_stop_removal(live_server, browser):

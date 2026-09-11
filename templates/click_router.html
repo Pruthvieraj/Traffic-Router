@@ -621,6 +621,19 @@
   }
   #precedenceList li button:hover { color: var(--danger); }
   #precedenceStatus { font-size: 12px; color: var(--ink-soft); }
+  #precImpactBtn {
+    font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; width: 100%;
+    background: var(--surface-muted); border: 1px solid var(--border-medium); color: var(--ink);
+    border-radius: 8px; padding: 8px 10px;
+  }
+  #precImpactBtn:hover { background: var(--surface-solid); }
+  #precImpactBtn:disabled { opacity: 0.6; cursor: default; }
+  #precedenceImpact {
+    margin-top: 8px; font-size: 12.5px; color: var(--ink); line-height: 1.6;
+  }
+  #precedenceImpact .impact-row { display: flex; justify-content: space-between; padding: 2px 0; }
+  #precedenceImpact .impact-extra { font-weight: 700; }
+  #precedenceImpact .impact-note { margin-top: 6px; font-size: 10.5px; color: var(--muted); line-height: 1.5; }
 
   /* ---------- Time-window rules panel ---------- */
   #timeWindowsPanel {
@@ -1156,7 +1169,7 @@
       <button id="precedenceClose" title="Close">&times;</button>
     </div>
     <div id="precedencePanel-body">
-      <p class="import-help">Require one stop to be visited before another — e.g. a pickup before its matching drop-off. This is a real constraint baked directly into the solve, not a post-hoc filter (see the README). Single-vehicle mode only; rules automatically follow your stops as the route is (re-)solved, but are cleared if you add or remove a stop, since positions shift.</p>
+      <p class="import-help">Require one stop to be visited before another — e.g. a pickup before its matching drop-off. This is a real constraint baked directly into the solve, not a post-hoc filter (see the README). Works in both single-vehicle and fleet mode — a fleet-mode pair is automatically kept on the same vehicle. Rules automatically follow your stops as the route is (re-)solved.</p>
       <div id="precedenceForm">
         <select id="precUSelect"></select>
         <span>before</span>
@@ -1165,6 +1178,8 @@
       </div>
       <ul id="precedenceList"></ul>
       <div id="precedenceStatus"></div>
+      <button id="precImpactBtn" type="button" style="margin-top:8px; display:none;">What does this rule cost me?</button>
+      <div id="precedenceImpact"></div>
     </div>
   </div>
   <div id="timeWindowsPanel">
@@ -1534,13 +1549,16 @@ document.getElementById('optionsDrawer').addEventListener('click', _disarmClearU
 
 document.getElementById('vehicleSelect').addEventListener('change', () => {
   document.getElementById('capacityWrap').style.display = isFleetMode() ? 'flex' : 'none';
-  // Precedence is single-vehicle-mode only (see the panel's own docstring
-  // in the JS below) — hide the entry point and drop any rules entirely
-  // when switching into fleet mode, rather than let them sit around
-  // referring to a mode where they're silently never sent to the server.
-  document.getElementById('precedenceBtn').style.display = isFleetMode() ? 'none' : '';
-  if (isFleetMode()) _clearPrecedenceRules();
-  // Time windows are single-vehicle-mode only too — /api/solve_fleet
+  // Precedence now works in BOTH modes (product-audit "cross-cluster
+  // precedence" item — /api/solve_fleet accepts and enforces it, actively
+  // co-locating a pair the fleet split initially separated rather than
+  // rejecting it — see app.py's solve_fleet docstring and
+  // clustering._co_locate_precedence_pairs) — so rules deliberately
+  // survive a mode switch instead of being dropped; _refreshPrecedenceForm
+  // re-derives the eligible stop list for whichever mode is now active.
+  _refreshPrecedenceForm();
+  _renderPrecedenceList();
+  // Time windows are still single-vehicle-mode only — /api/solve_fleet
   // doesn't accept them (see app.py's solve_fleet docstring).
   document.getElementById('timeWindowsBtn').style.display = isFleetMode() ? 'none' : '';
   if (isFleetMode()) _clearTimeWindows();
@@ -1930,19 +1948,32 @@ document.getElementById('citySelect').addEventListener('change', (e) => {
 
 // ---------- Precedence ("visit X before Y") rules ----------
 // A real constraint baked directly into the QUBO/classical solve (see
-// src/qubo_tsp.py's build_open_path_bqm and app.py's /api/solve), not a
-// post-hoc filter on the result. Scoped to single-vehicle mode only, and
-// rules are stored as [uIdx, vIdx] pairs into the CURRENT clickedPoints
-// array — which only stays meaningful across an add (append-only, safe)
-// or a drag (same index, safe), not a removal or a solve's reordering, so
-// both of those are handled explicitly below (remap on solve, drop on
-// removal) rather than just clearing the whole list on every change.
+// src/qubo_tsp.py's build_open_path_bqm and app.py's /api/solve). Works in
+// BOTH single-vehicle and fleet mode: /api/solve_fleet accepts and
+// enforces `precedence` exactly like /api/solve does, actively co-locating
+// a pair the fleet split happens to separate onto one vehicle rather than
+// rejecting it (product-audit "cross-cluster precedence" item — see
+// clustering.solve_multi_vehicle's PRECEDENCE section and
+// _co_locate_precedence_pairs). Rules are stored as [uIdx, vIdx] pairs
+// into the CURRENT clickedPoints array — which only stays meaningful
+// across an add (append-only, safe) or a drag (same index, safe), not a
+// removal or a single-vehicle solve's reordering (fleet solves never
+// reorder clickedPoints itself — see solveFleet() — so no remap is needed
+// there), so both of those are handled explicitly below (remap on
+// single-vehicle solve, drop on removal) rather than just clearing the
+// whole list on every change.
 
 let precedenceRules = [];
 
 function _interiorStopIndices() {
-  // Index 0 is Start, the last index is End — only indices in between are
-  // eligible, mirroring how the backend treats start_idx/end_idx as fixed.
+  // Fleet mode: index 0 is the Depot, every OTHER index is an eligible
+  // stop (no fixed "End" — /api/solve_fleet's depot is both start and end
+  // of every vehicle's loop). Single-vehicle mode: index 0 is Start, the
+  // last index is End, and only indices strictly between are eligible,
+  // mirroring how the backend treats start_idx/end_idx as fixed.
+  if (isFleetMode()) {
+    return clickedPoints.length > 1 ? clickedPoints.slice(1).map((_, i) => i + 1) : [];
+  }
   return clickedPoints.length > 2 ? clickedPoints.slice(1, -1).map((_, i) => i + 1) : [];
 }
 
@@ -1971,6 +2002,15 @@ function _renderPrecedenceList() {
   `).join('');
   _updateOptionsBadges();
   _redrawPrecedenceConnectors();
+  // "What does this rule cost me?" (product-audit item: wiring
+  // explain_open_path_precedence_impact into the UI, not just tested as a
+  // library function) — only meaningful for the fixed-start/fixed-end
+  // route /api/explain_precedence_impact actually solves, so single-
+  // vehicle mode only (same honest scope as the endpoint itself), and
+  // only once there's a rule to actually ask about.
+  const impactBtn = document.getElementById('precImpactBtn');
+  impactBtn.style.display = (!isFleetMode() && precedenceRules.length) ? '' : 'none';
+  document.getElementById('precedenceImpact').innerHTML = ''; // any previous answer is now stale
 }
 
 document.getElementById('precedenceBtn').addEventListener('click', () => {
@@ -2014,6 +2054,51 @@ function _clearPrecedenceRules() {
   _renderPrecedenceList();
 }
 
+// Product-audit item: explain_open_path_precedence_impact (src/explain.py)
+// existed only as a tested library function, never reachable from the UI.
+// Solves the SAME route twice server-side (once with the rule, once
+// without — see /api/explain_precedence_impact) and reports the real
+// extra cost, on demand, rather than on every ordinary solve — a second
+// solve is real added latency a visitor should only pay for by explicitly
+// asking "what does this cost me."
+document.getElementById('precImpactBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('precImpactBtn');
+  const resultEl = document.getElementById('precedenceImpact');
+  if (clickedPoints.length < 2 || !precedenceRules.length) return;
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = 'Solving twice to compare…';
+  resultEl.innerHTML = '';
+  try {
+    const method = document.getElementById('methodSelect').value;
+    const hourRaw = document.getElementById('hourSelect').value;
+    const hour = hourRaw === 'now' ? (new Date().getHours() + new Date().getMinutes() / 60) : parseFloat(hourRaw);
+    const durations = await osrmTable(clickedPoints);
+    const resp = await fetch('/api/explain_precedence_impact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ matrix: durations, method, hour, precedence: precedenceRules, points: clickedPoints }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      resultEl.innerHTML = `<div class="impact-note">${data.error || "Couldn't compute this right now."}</div>`;
+      return;
+    }
+    const sign = data.extra_cost > 0.05 ? '+' : '';
+    resultEl.innerHTML = `
+      <div class="impact-row"><span>Without this rule</span><b>${data.cost_without_constraint} min</b></div>
+      <div class="impact-row"><span>With this rule</span><b>${data.cost_with_constraint} min</b></div>
+      <div class="impact-row impact-extra"><span>Real extra cost</span><b>${sign}${data.extra_cost} min (${sign}${data.extra_cost_pct}%)</b></div>
+      <div class="impact-note">Solved this exact route twice — once with every rule below enforced, once with none — using the same method and traffic conditions, to measure the real cost of these specific rules on this specific route.</div>
+    `;
+  } catch (err) {
+    resultEl.innerHTML = `<div class="impact-note">${err.message || 'Request failed.'}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+});
+
 function _removePrecedenceForRemovedIndex(i) {
   precedenceRules = precedenceRules
     .filter(([u, v]) => u !== i && v !== i) // any rule naming the removed stop no longer makes sense
@@ -2041,10 +2126,12 @@ function _remapPrecedenceAfterSolve(order) {
 // each window is pruned into a provably-SAFE (not provably-sufficient)
 // tour-position range before solving, then the ACTUAL solved schedule is
 // checked against it afterwards (rendered by _timeWindowChecksHtml in the
-// stats panel). Same keyed-by-CURRENT-index shape and lifecycle as
-// precedenceRules above: cleared on switch to fleet mode (not supported
-// server-side for /api/solve_fleet), shifted down on point removal, and
-// remapped to new positions after every (re-)solve.
+// stats panel). Same keyed-by-CURRENT-index shape as precedenceRules
+// above, but — unlike precedence, which now works in both modes (see
+// precedenceRules above) — still cleared on switch to fleet mode: time
+// windows aren't supported server-side for /api/solve_fleet at all (a
+// still-open, structural gap — see docs/features.md). Shifted down on
+// point removal, and remapped to new positions after every (re-)solve.
 
 let timeWindows = {}; // { [currentIndex]: [earliestMinutes, latestMinutes] }
 
@@ -2925,14 +3012,13 @@ async function simulateIncident(legIdx) {
 //
 // Works in both single-vehicle and fleet mode: it re-solves against
 // whichever endpoint (/api/solve or /api/solve_fleet) and configuration
-// (n_vehicles, capacity cap, demands) produced the route that's currently
-// on screen, so the same continuous-re-optimization behavior applies to
-// "Vehicle 1, 2, 3, ..." exactly as it does to a single vehicle — same
-// simulated clock, same incident injection, same honest "SIMULATED, not a
-// live GPS feed" framing. One real difference: fleet mode doesn't (yet)
-// send precedence rules to /api/solve_fleet even on a manual solve (see
-// solveFleet() above), so this loop doesn't invent that for the fleet case
-// either — it only re-solves whatever solveFleet() itself already sends.
+// (n_vehicles, capacity cap, demands, precedence rules) produced the route
+// that's currently on screen, so the same continuous-re-optimization
+// behavior applies to "Vehicle 1, 2, 3, ..." exactly as it does to a
+// single vehicle — same simulated clock, same incident injection, same
+// precedence rules (now sent on every fleet solve too, manual or live —
+// see solveFleet() and _liveReoptTickFleet() below), same honest
+// "SIMULATED, not a live GPS feed" framing.
 
 const LIVE_REOPT_INTERVAL_MS = 4000;
 const LIVE_REOPT_HOUR_STEP = 0.25; // each tick simulates 15 minutes passing
@@ -3107,7 +3193,7 @@ async function _liveReoptTickFleet() {
         matrix: durations, method: ctx.method, hour: newHour, n_vehicles: ctx.nVehicles, depot_index: 0,
         max_stops_per_vehicle: ctx.maxStopsPerVehicle, demands: ctx.demands, vehicle_capacity: ctx.vehicleCapacity,
         incident_pairs: incidentLeg ? [incidentLeg] : [],
-        points: clickedPoints,
+        precedence: precedenceRules, points: clickedPoints,
       }),
     });
     const solveData = await solveResp.json();
@@ -3496,7 +3582,7 @@ async function solveFleet(nVehicles) {
       body: JSON.stringify({
         matrix: durations, method, hour, n_vehicles: nVehicles, depot_index: 0,
         max_stops_per_vehicle: maxStopsPerVehicle, demands, vehicle_capacity: vehicleCapacity,
-        points: clickedPoints,
+        precedence: precedenceRules, points: clickedPoints,
       }),
     });
     const solveData = await solveResp.json();
@@ -3653,7 +3739,8 @@ function _restoreState(state, noticeText) {
   if (vehicleOptions.includes(state.v)) {
     document.getElementById('vehicleSelect').value = state.v;
     document.getElementById('capacityWrap').style.display = isFleetMode() ? 'flex' : 'none';
-    document.getElementById('precedenceBtn').style.display = isFleetMode() ? 'none' : '';
+    // Precedence works in both modes now (see precedenceRules' own comment
+    // above) — only time windows stay single-vehicle-mode only.
     document.getElementById('timeWindowsBtn').style.display = isFleetMode() ? 'none' : '';
   }
   if (state.cap) document.getElementById('capacityInput').value = state.cap;
@@ -3670,12 +3757,17 @@ function _restoreState(state, noticeText) {
     if (points.length) map.setView(points[0], 13);
 
     // Precedence rules only make sense if every index they reference
-    // survived the MAX_STOPS truncation above and single-vehicle mode.
-    if (Array.isArray(state.prec) && !isFleetMode()) {
+    // survived the MAX_STOPS truncation above and is still a real eligible
+    // stop in whichever mode this state restores into — fleet mode has no
+    // fixed "End" (only the depot, index 0, is excluded), single-vehicle
+    // mode excludes both Start (0) and End (last), same range
+    // _interiorStopIndices() itself uses.
+    if (Array.isArray(state.prec)) {
+      const maxIdx = isFleetMode() ? points.length : points.length - 1;
       precedenceRules = state.prec.filter(pair =>
         Array.isArray(pair) && pair.length === 2 &&
         Number.isInteger(pair[0]) && Number.isInteger(pair[1]) &&
-        pair[0] > 0 && pair[0] < points.length - 1 && pair[1] > 0 && pair[1] < points.length - 1,
+        pair[0] > 0 && pair[0] < maxIdx && pair[1] > 0 && pair[1] < maxIdx,
       );
     }
 

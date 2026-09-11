@@ -54,7 +54,7 @@ under a minute. Key outputs in `output/`:
 | `route_map.html` / `route_map_after_spike.html` | A 6-stop Bengaluru route, before/after a simulated incident |
 | `comparison_chart.png`, `constraint_chart.png` | The two headline benchmark charts (see "Honest findings" below) |
 | `report.md` | Full numeric results for all five experiments |
-| `pitch_deck.pptx` | A 12-slide deck generated from the CSVs above — run `node generate_pitch_deck.js` separately, see [`docs/pitching.md`](docs/pitching.md) |
+| `pitch_deck.pptx` | A 15-slide deck generated from the CSVs above — run `node generate_pitch_deck.js` separately, see [`docs/pitching.md`](docs/pitching.md) |
 
 Adding a city is one dictionary entry in `src/city_graph.py`'s `CITIES`
 dict, then re-run `python3 main.py` — see [`docs/architecture.md`](docs/architecture.md).
@@ -69,10 +69,10 @@ real quantum annealer), with real dispatch constraints (precedence, per-
 vehicle capacity, time windows, multi-objective time/distance) added as
 extra penalty terms rather than bolted-on post-processing.
 
-The full 13-module pipeline (road graph → congestion model → distance
+The full 14-module pipeline (road graph → congestion model → distance
 matrix → QUBO solver → classical/OR-Tools baselines → clustering/scaling →
 QAOA → live-traffic provider → real QPU solver → explainability →
-time-window pruning) is documented file-by-file in
+time-window pruning → real-data congestion calibration) is documented file-by-file in
 [`docs/architecture.md`](docs/architecture.md), including how it scales
 past a dozen stops via cluster-first/route-second decomposition.
 
@@ -112,7 +112,7 @@ honest scope: [`docs/features.md`](docs/features.md).
 pip install pytest
 pytest tests/ -v
 ```
-**389 Python tests, 462 total** including a 73-test real-browser Playwright
+**420 Python tests, 509 total** including a 75-test real-browser Playwright
 layout suite (`pytest tests/test_layout.py -v`, needs
 `pip install playwright && playwright install --with-deps chromium`),
 plus a separate **14-test Node.js frontend suite**
@@ -163,8 +163,12 @@ anything — this repo's own search is a good-faith non-lawyer pass.
 Lead with the composed-constraints finding, not the plain-TSP one, and
 show the live re-optimization demo — a moving map beats a chart in the
 room. Full talking points, anticipated judge questions, and what's still
-genuinely on the roadmap (real live-traffic calibration from IISc's
-UVH-26 dataset, cross-cluster precedence, fleet-mode live traffic):
+genuinely on the roadmap (running the real UVH-26 congestion-calibration
+pipeline against actual downloaded images — the pipeline itself is real
+and tested, see [`docs/architecture.md`](docs/architecture.md), but this
+project's own dev sandbox can't reach huggingface.co to run it live —
+cross-cluster precedence and fleet-mode live traffic are both shipped and
+verified now, see "Precedence" in [`docs/live-app.md`](docs/live-app.md)):
 [`docs/pitching.md`](docs/pitching.md).
 
 ## License
@@ -180,11 +184,11 @@ All deep technical detail lives in [`docs/`](docs/), split out of this
 README so it stays a quick pitch + quick-start, not a whitepaper:
 
 - [`docs/live-app.md`](docs/live-app.md) — `app.py`'s full feature set and UI changelog
-- [`docs/architecture.md`](docs/architecture.md) — the 13-module pipeline, and scaling past a dozen stops
+- [`docs/architecture.md`](docs/architecture.md) — the 14-module pipeline, and scaling past a dozen stops
 - [`docs/benchmarks.md`](docs/benchmarks.md) — all 5 experiments in full, with exact numbers
 - [`docs/features.md`](docs/features.md) — route explainability, time-window constraints
 - [`docs/quantum-hardware.md`](docs/quantum-hardware.md) — real D-Wave QPU setup + QAOA
-- [`docs/testing.md`](docs/testing.md) — what the 462+14 tests actually cover
+- [`docs/testing.md`](docs/testing.md) — what the 509 tests actually cover
 - [`docs/deploy.md`](docs/deploy.md) — GitHub Pages and Render deployment steps
 - [`docs/pitching.md`](docs/pitching.md) — pitch deck generation, judging talking points, roadmap
 - [`docs/patent-note.md`](docs/patent-note.md) — the full patent-scope note

@@ -15,7 +15,7 @@ pip install pytest
 pytest tests/ -v
 ```
 
-**389 Python tests** (462 total including the layout suite below, plus a
+**420 Python tests** (509 total including the layout suite below, plus a
 separate 14-test Node.js frontend suite — see below), covering the QUBO
 solver, the classical baselines, the multi-objective time/distance
 trade-off (`combine_objectives`, real-vs-cosmetic-objective checks), route
@@ -28,16 +28,30 @@ real no-token failure path checked unmocked), real-live-traffic wiring
 (`src/traffic_provider.py`'s `GoogleRoutesTrafficProvider` — request
 construction and response parsing verified via an injected fake HTTP
 session, the real no-API-key failure path checked unmocked, plus the
-`points`/`coords` plumbing through `/api/solve` and `/api/solve_fleet`),
+`points`/`coords` plumbing through `/api/solve` and `/api/solve_fleet`,
+and, at the Flask level, that BOTH live endpoints actually route through a
+real injected `GoogleRoutesTrafficProvider` end-to-end — not just that the
+provider class works in isolation — by monkeypatching `app.py`'s
+`_traffic_provider` and asserting the returned route/cost match hand-
+computed values and exactly one HTTP call was made), real-data congestion
+calibration (`src/vehicle_density_calibration.py` — vehicle-count-per-image
+extraction from COCO-format annotations, the density-to-multiplier mapping,
+and blending a calibrated multiplier with the synthetic model, all checked
+against a fixture matching IISc's UVH-26 dataset's documented schema — see
+[`docs/live-app.md`](live-app.md) for why this project's own dev sandbox
+can't run it against the real downloaded dataset),
 the clustering/scaling logic,
 the multi-vehicle dispatch demo (including the
 real per-vehicle capacity cap — by stop count *or* by per-stop demand
 weight — and its auto-raising of vehicle count in either mode), the
 precedence ("visit X before Y") constraint on both the single-vehicle
 open-path solver *and* the multi-vehicle dispatch demo (including that it
-composes with incident-triggered re-optimization in a single request, and
-that a precedence pair split across two vehicles by the fleet clustering
-step fails as a clean 400 instead of a silently-wrong route), the
+composes with incident-triggered re-optimization in a single request, that
+a precedence pair split across two vehicles by the fleet clustering step
+gets co-located onto one vehicle automatically rather than rejected —
+including transitive chains — and that it still fails as a clean 400 in
+the one case that genuinely can't be worked around: an active hard
+capacity cap too small to absorb the co-located pair), the
 congestion model (including the on-demand incident spike), the pluggable
 traffic-provider interface, the pan-India city data (every city has valid
 India-bounded coordinates, enough landmarks for a real route, and a fully
@@ -86,7 +100,7 @@ runner, no npm install):
 node --test tests/frontend/*.test.js
 ```
 
-**And a 73-test real-browser layout suite** (`tests/test_layout.py`),
+**And a 75-test real-browser layout suite** (`tests/test_layout.py`),
 added after a real bug shipped through a fully green test suite and
 several rounds of manual screenshots: the topbar had a fixed height
 combined with `flex-wrap`, so on a narrower browser window its second row

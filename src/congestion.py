@@ -16,6 +16,13 @@ CCTV/vision pipeline, or a live traffic-index API) instead of the
 synthetic model — the rest of the pipeline (distance_matrix, qubo_tsp,
 baseline) only ever consumes the resulting `congested_minutes` edge
 attribute, so it doesn't care where that number came from.
+
+That plug now has a real, tested implementation, not just this paragraph:
+see `vehicle_density_calibration.py` (real vehicle-count-to-multiplier
+calibration logic, tested against a UVH-26-schema-accurate fixture) and
+`calibrate_from_uvh26.py` at the repo root (a runnable CLI for anyone with
+a local copy of real UVH-26 annotation files — see that file's docstring
+for exactly why it has to be run outside this project's own dev sandbox).
 """
 
 import math

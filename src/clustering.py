@@ -236,6 +236,43 @@ def _cluster_size(cluster: list[int], weights: dict[int, float] | None) -> float
     return sum(weights.get(p, 1.0) for p in cluster)
 
 
+def _co_locate_precedence_pairs(
+    clusters: list[list[int]], precedence: list[tuple[int, int]],
+) -> list[list[int]]:
+    """Ensures every precedence pair (u, v) ends up in the same cluster, by
+    moving the SECOND stop of any pair not already co-located into the
+    FIRST stop's cluster — a single-point move, like `_rebalance_for_capacity`
+    makes for capacity, not a whole-cluster merge, so a stop that merely
+    happened to share a cluster with u or v is never pulled along too.
+
+    Deterministic and handles transitive chains correctly: pairs are
+    processed in the order given, and a stop already moved for one pair is
+    looked up at its NEW location for any later pair naming it — so e.g.
+    precedence=[(a, b), (b, c)] ends up with a, b, AND c all on one
+    cluster, not just a+b and b+c separately.
+
+    This is what turns "a precedence pair split across two vehicles" from
+    an outright rejection into something the fleet split actively avoids —
+    see solve_multi_vehicle's PRECEDENCE section. A stop referencing an
+    index this clustering doesn't own is left alone here; the caller
+    (solve_multi_vehicle) validates that separately with a clearer error.
+    """
+    clusters = [list(c) for c in clusters]
+    owner = {}
+    for ci, c in enumerate(clusters):
+        for p in c:
+            owner[p] = ci
+    for (u, v) in precedence:
+        if u not in owner or v not in owner:
+            continue
+        if owner[u] == owner[v]:
+            continue
+        clusters[owner[v]].remove(v)
+        clusters[owner[u]].append(v)
+        owner[v] = owner[u]
+    return [c for c in clusters if c]
+
+
 def _rebalance_for_capacity(
     W: np.ndarray, clusters: list[list[int]], capacity: float, weights: dict[int, float] | None = None,
 ) -> list[list[int]]:
@@ -354,12 +391,21 @@ def solve_multi_vehicle(
 
     PRECEDENCE (optional, `precedence`): a list of (u, v) interior-stop-index
     pairs meaning "u must be visited before v" — same semantics as the
-    single-vehicle open-path solver's `precedence` parameter. HONEST SCOPE:
-    a precedence pair only means something if both stops end up on the SAME
-    vehicle — the fleet split decides that (see HOW STOPS ARE SPLIT above)
-    before precedence is even considered, so if the split happens to put u
-    and v on different vehicles, this raises ValueError rather than
-    silently dropping the constraint. For whichever vehicle does own an
+    single-vehicle open-path solver's `precedence` parameter. A precedence
+    pair only means something if both stops end up on the SAME vehicle, so
+    once the fleet split (see HOW STOPS ARE SPLIT above) has been decided —
+    including any capacity rebalancing — `_co_locate_precedence_pairs` moves
+    the second stop of any pair that landed on a different vehicle onto the
+    first stop's vehicle, so the constraint is satisfiable BY CONSTRUCTION
+    instead of needing you to guess a fleet size small enough to get lucky.
+    HONEST SCOPE: this can leave one vehicle with more stops than the
+    fair-share target that produced it — keeping a precedence pair together
+    is a real cost when the two stops are geographically far apart, not
+    something clustering can route around — and if an active HARD capacity
+    cap (`max_stops_per_vehicle` / `vehicle_capacity`) genuinely can't
+    accommodate the co-located group, this raises ValueError naming that
+    specific tension rather than silently violating the capacity promise.
+    For whichever vehicle does own an
     applicable pair, that vehicle's leg is solved with the depot pinned as
     BOTH the fixed start and fixed end of the already-tested open-path
     solver (`solve_open_path_quantum_inspired(..., start_idx=0, end_idx=0,
@@ -468,26 +514,37 @@ def solve_multi_vehicle(
             clusters = _cluster_indices(W, stop_indices, n_vehicles)
             clusters = _rebalance_for_capacity(W, clusters, effective_cap, weights=weights)
 
-    # Precedence only means something if both stops of a pair landed on the
-    # same vehicle — the split above was decided without any awareness of
-    # precedence, so check that now and group applicable pairs by vehicle
-    # (cluster index) rather than silently drop or half-enforce anything.
+    # Precedence only means something if both stops of a pair land on the
+    # same vehicle. The split above was decided with no awareness of
+    # precedence at all, so first validate every pair actually names a real
+    # stop, then co-locate anything the split separated (see
+    # _co_locate_precedence_pairs) instead of rejecting it outright.
     precedence_by_cluster: dict[int, list[tuple[int, int]]] = {}
     if precedence:
+        known = {idx for c in clusters for idx in c}
+        for (u, v) in precedence:
+            if u not in known or v not in known:
+                raise ValueError(f"Precedence pair ({u}, {v}) references a stop that isn't in stop_indices.")
+
+        clusters = _co_locate_precedence_pairs(clusters, precedence)
+
+        # Co-locating pairs can push a cluster past an ACTIVE hard capacity
+        # cap — a real, different tension from the old "different vehicles"
+        # case, worth its own clear error rather than silently breaking the
+        # capacity promise (see "PRECEDENCE" in this function's docstring).
+        if hard_cap:
+            over = [c for c in clusters if _cluster_size(c, weights) > effective_cap + 1e-9]
+            if over:
+                raise ValueError(
+                    "Precedence pair(s) require some stops to share a vehicle, but keeping them "
+                    f"together would push a vehicle's load past its capacity limit ({effective_cap:g}). "
+                    "Raise the capacity limit, add more vehicles, or remove a precedence rule."
+                )
+
         cluster_of: dict[int, int] = {}
         for ci, c in enumerate(clusters):
             for idx in c:
                 cluster_of[idx] = ci
-        for (u, v) in precedence:
-            cu, cv = cluster_of.get(u), cluster_of.get(v)
-            if cu is None or cv is None:
-                raise ValueError(f"Precedence pair ({u}, {v}) references a stop that isn't in stop_indices.")
-            if cu != cv:
-                raise ValueError(
-                    f"Precedence pair ({u}, {v}) can't be enforced: the fleet split placed these two "
-                    f"stops on different vehicles (vehicle {cu} and vehicle {cv}), and a precedence "
-                    "rule can't be enforced across vehicles. Try fewer vehicles, or remove this rule."
-                )
         for (u, v) in precedence:
             precedence_by_cluster.setdefault(cluster_of[u], []).append((u, v))
 

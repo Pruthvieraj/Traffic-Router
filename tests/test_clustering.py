@@ -418,10 +418,13 @@ def test_no_demands_leaves_demand_field_none():
 # Precedence in multi-vehicle mode only means something if the fleet split
 # happens to keep both stops of a pair on the SAME vehicle — that split is
 # decided first, with no awareness of precedence at all, so these tests
-# cover both outcomes: a same-vehicle pair must actually be honored (using
-# the depot-anchored open-path solver under the hood, not the closed-loop
-# one — see solve_multi_vehicle's "PRECEDENCE" docstring section for why),
-# and a cross-vehicle pair must raise loudly instead of quietly ignoring it.
+# cover all three outcomes: a same-vehicle pair must actually be honored
+# (using the depot-anchored open-path solver under the hood, not the
+# closed-loop one — see solve_multi_vehicle's "PRECEDENCE" docstring
+# section for why); a pair the split initially separated must be actively
+# CO-LOCATED onto one vehicle rather than rejected (product-audit "cross-
+# cluster precedence" item — see _co_locate_precedence_pairs); and only a
+# genuine, unresolvable capacity conflict should still raise.
 
 def test_precedence_is_honored_when_forced_onto_one_vehicle_classical():
     from qubo_tsp import satisfies_precedence
@@ -455,14 +458,64 @@ def test_precedence_is_honored_when_forced_onto_one_vehicle_quantum():
     assert result["total_cost"] == pytest.approx(open_path_length(path, W))
 
 
-def test_precedence_across_vehicles_raises_instead_of_silently_ignoring():
+def test_precedence_across_vehicles_gets_co_located_onto_one_vehicle():
+    """The old behavior rejected a precedence pair the fleet split happened
+    to separate. The audit's "cross-cluster precedence" gap: this pair
+    should instead end up satisfied, by moving one stop onto the other's
+    vehicle — with every stop still visited exactly once across the fleet."""
+    from qubo_tsp import satisfies_precedence
+
     n = 6
     W = _random_matrix(n, seed=7)
     stop_indices = list(range(1, n))
-    # One vehicle per stop guarantees any pair spans two different vehicles.
-    with pytest.raises(ValueError, match="different vehicles"):
+    u, v = stop_indices[0], stop_indices[1]
+    # One vehicle per stop guarantees the pair starts out on two different
+    # vehicles, with no hard capacity cap in the way of co-locating them.
+    result = solve_multi_vehicle(
+        W, 0, stop_indices, n_vehicles=len(stop_indices), method="classical",
+        precedence=[(u, v)],
+    )
+    # Every stop still visited exactly once, across however many vehicles
+    # co-locating u and v actually needed.
+    all_visited = sorted(s for veh in result["vehicles"] for s in veh["path"] if s != 0)
+    assert all_visited == sorted(stop_indices)
+    owning_path = next(veh["path"] for veh in result["vehicles"] if u in veh["path"])
+    assert v in owning_path, "u and v must have been co-located onto the same vehicle"
+    assert satisfies_precedence(owning_path, [(u, v)])
+
+
+def test_precedence_chain_is_fully_co_located_transitively():
+    """precedence=[(a, b), (b, c)] should end up with a, b, AND c all on
+    one vehicle, not just a+b and b+c separately — _co_locate_precedence_pairs
+    must look up a stop's NEW cluster after an earlier pair already moved it."""
+    from qubo_tsp import satisfies_precedence
+
+    n = 7
+    W = _random_matrix(n, seed=11)
+    stop_indices = list(range(1, n))
+    a, b, c = stop_indices[0], stop_indices[2], stop_indices[4]
+    precedence = [(a, b), (b, c)]
+    result = solve_multi_vehicle(
+        W, 0, stop_indices, n_vehicles=len(stop_indices), method="classical", precedence=precedence,
+    )
+    owning_path = next(veh["path"] for veh in result["vehicles"] if a in veh["path"])
+    assert b in owning_path and c in owning_path
+    assert satisfies_precedence(owning_path, precedence)
+
+
+def test_precedence_still_raises_when_a_hard_capacity_cap_cant_absorb_it():
+    """Co-locating is only safe up to an ACTIVE hard cap — if forcing two
+    stops onto one vehicle would blow past an explicit max_stops_per_vehicle,
+    that's a genuine, different conflict (precedence vs. capacity) that must
+    still raise a clear error rather than silently breaking the capacity
+    promise."""
+    n = 6
+    W = _random_matrix(n, seed=7)
+    stop_indices = list(range(1, n))
+    with pytest.raises(ValueError, match="capacity"):
         solve_multi_vehicle(
             W, 0, stop_indices, n_vehicles=len(stop_indices), method="classical",
+            max_stops_per_vehicle=1,  # 1 stop/vehicle can never fit a co-located pair
             precedence=[(stop_indices[0], stop_indices[1])],
         )
 

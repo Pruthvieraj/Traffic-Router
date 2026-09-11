@@ -76,6 +76,16 @@ The pipeline:
    arrival windows on top of the same QUBO — see [Time-window constraints](features.md)
    below for the full honest scope (a partial, disclosed answer, not a
    solved one).
+14. **`src/vehicle_density_calibration.py`** — the real-data calibration
+   pipeline `congestion.py`'s own synthetic model names as its honest
+   upgrade path: turns real vehicle-count annotations (e.g. from IISc's
+   free UVH-26 dataset) into a congestion multiplier, tested against a
+   schema-accurate fixture. See "Honest findings" and
+   [`docs/live-app.md`](live-app.md) for the full honest scope — this
+   project's own dev sandbox can't reach huggingface.co to run it against
+   the real dataset, so it ships as real, tested, ready-to-run code rather
+   than a demonstrated live result; `calibrate_from_uvh26.py` at the repo
+   root is the runnable entry point for anyone with normal internet access.
 
 ## Scaling past a dozen stops
 
