@@ -4,7 +4,10 @@
 
 ## `app.py` — click anywhere in the city (real streets, real solve, live)
 
-Run `python3 app.py`, open `http://127.0.0.1:5000`. Click the map — type a
+Run `python3 app.py`, open `http://127.0.0.1:5000/app` (or open
+`http://127.0.0.1:5000` and click "Open the live app" on the landing page —
+`/` is now a lightweight landing page linking to this UI and to the static
+`/demo`, see the README's Quick start). Click the map — type a
 place name into the search box and pick it from the live autocomplete
 suggestions — or tap the microphone icon inside the search box and just
 say the place name (built on the browser's own Web Speech API, no extra
@@ -547,4 +550,63 @@ judge's first ten seconds are visual before they're technical:
 None of this changes what the app computes — it's the same OSRM +
 congestion-model + QUBO pipeline described above. It changes whether a
 judge experiences it as a hackathon prototype or a finished product.
+
+## The product-audit pass — a full month of UI/UX work, in order
+
+An independent product/UX audit of the live repository (not just the
+README's own claims about itself) produced a prioritized 1-month roadmap,
+implemented in full and in order, each item verified against a real
+browser via `tests/test_layout.py` and committed separately (see the git
+history for the exact commit per item). Same rule as everything above:
+nothing here changes what the app computes.
+
+**Week 1 — quick wins.** A live usage-stats pill in the topbar reading
+real `/api/analytics` numbers instead of nothing; "Clear points" now
+requires a confirming second click once there's a solved route or rules
+to lose; toasts stack instead of one silently overwriting another; a
+"Try an example route" button seeds real landmarks and auto-solves for a
+first-time visitor who doesn't know where to click yet; the method
+selector badges/disables "Real QPU" when the server has no D-Wave token
+configured, via a new `/api/capabilities` endpoint, instead of letting you
+click into a 400; and a first pass at an Insights & Benchmark dashboard
+that renders the five experiment CSVs already in `output/` as real
+interactive charts (`#statsStripBtn` → `openInsightsPanel()`) instead of
+static PNGs nobody was shown.
+
+**Week 2 — structural fixes.** The topbar was doing too much at once (the
+audit's #1 structural UX finding) — it's now a slim always-visible row
+(city, theme, search, Solve, Clear, Options) plus an "Options" drawer for
+everything else, with every control keeping its original id and handler
+(see `_openOptionsDrawer`/`_closeOptionsDrawer`). Route History &
+Favorites (`#historyBtn`, localStorage-only, no backend) logs every solve
+and can reload one through the exact same `_restoreState()` path a shared
+link uses, with a starred entry exempt from the 20-entry eviction cap.
+
+**Week 3 — onboarding and legibility.** The site split into a real
+landing page at `/` (two cards: "Open the live app" → `/app`, "View the
+instant demo" → `/demo`, the same static `output/multi_city_map.html`)
+with cross-links back and forth, plus a 3-step first-run tour on `/app`
+that advances on the visitor's own real actions and never nags twice
+(gated behind `!navigator.webdriver` so it doesn't interfere with
+automated tests). Active precedence rules and time-window rules — real,
+solver-enforced constraints that were previously only visible as text in
+a panel — now draw directly on the map: a dashed connector between a
+precedence pair's two pins, a small clock badge on any pin with a time
+window (see `pinIcon()` and `_redrawPrecedenceConnectors()`).
+
+**Week 4 — the fun part, and making sure it all actually works on a
+phone.** The Compare panel became a "Quantum vs. Classical Arena": a
+"3, 2, 1, GO" countdown, both solved routes drawing in at the same time
+but at a speed tied to their own real `cost_minutes` (so the genuinely
+faster one visibly finishes first), ending in a "🏆 &lt;Method&gt; won by
+X.X min" banner (or a "🤝 Dead heat"). Actually testing the new topbar and
+drawer one-handed at 375px width (not just trusting the responsive CSS)
+found and fixed three real bugs: every drawer-launched panel rendering
+invisibly *underneath* the still-open full-width drawer at phone width;
+every centered panel's entrance animation briefly fighting its own
+centering transform and overflowing the screen edge for its ~320ms
+duration; and the Insights dashboard — the audit's own "best asset,
+currently invisible" finding — having no way to open it at all below
+860px width once its one entry point hid itself there. All three are
+fixed and covered by dedicated tests (see `docs/testing.md`).
 

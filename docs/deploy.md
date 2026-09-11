@@ -67,7 +67,12 @@ the easiest free option for this project. Steps:
 5. Click **Deploy**. First build takes a few minutes (installing `osmnx`,
    `dwave-samplers`, etc.). When it's done you get a public URL like
    `https://your-app-name.onrender.com` — that's it, that's the live link,
-   shareable with judges, works from any device.
+   shareable with judges, works from any device. Its root URL is now a
+   small landing page (`/`) with two cards — "Open the live app" (`/app`,
+   the click-anywhere UI above) and "View the instant demo" (`/demo`, the
+   same static `output/multi_city_map.html` from Option A, served by
+   Render with no separate GitHub Pages setup needed) — so the one link
+   covers both without judges needing to know either sub-path exists.
 
 **Two things worth knowing before you rely on this for a live demo:**
 - Render's free tier spins the app down after ~15 minutes of no traffic,

@@ -36,10 +36,14 @@ street network, solved on the spot):
 ```bash
 python3 app.py
 ```
-then open **http://127.0.0.1:5000**. See [`docs/live-app.md`](docs/live-app.md)
-for exactly how it works, its live-traffic integration, precedence rules,
-time windows, multi-vehicle dispatch, and its one real caveat (needs live
-internet for map tiles and OSRM routing calls).
+then open **http://127.0.0.1:5000** — a small landing page with two cards:
+"Open the live app" (`/app`, the interactive click-router UI) and "View the
+instant demo" (`/demo`, the same static `output/multi_city_map.html` from
+the `main.py` run above, served without needing `app.py` at all). See
+[`docs/live-app.md`](docs/live-app.md) for exactly how the live app works,
+its live-traffic integration, precedence rules, time windows, multi-vehicle
+dispatch, and its one real caveat (needs live internet for map tiles and
+OSRM routing calls).
 
 Everything runs offline otherwise (no API keys needed) and finishes in
 under a minute. Key outputs in `output/`:
@@ -108,7 +112,7 @@ honest scope: [`docs/features.md`](docs/features.md).
 pip install pytest
 pytest tests/ -v
 ```
-**377 Python tests, 421 total** including a 44-test real-browser Playwright
+**389 Python tests, 462 total** including a 73-test real-browser Playwright
 layout suite (`pytest tests/test_layout.py -v`, needs
 `pip install playwright && playwright install --with-deps chromium`),
 plus a separate **14-test Node.js frontend suite**
@@ -180,7 +184,7 @@ README so it stays a quick pitch + quick-start, not a whitepaper:
 - [`docs/benchmarks.md`](docs/benchmarks.md) — all 5 experiments in full, with exact numbers
 - [`docs/features.md`](docs/features.md) — route explainability, time-window constraints
 - [`docs/quantum-hardware.md`](docs/quantum-hardware.md) — real D-Wave QPU setup + QAOA
-- [`docs/testing.md`](docs/testing.md) — what the 421+14 tests actually cover
+- [`docs/testing.md`](docs/testing.md) — what the 462+14 tests actually cover
 - [`docs/deploy.md`](docs/deploy.md) — GitHub Pages and Render deployment steps
 - [`docs/pitching.md`](docs/pitching.md) — pitch deck generation, judging talking points, roadmap
 - [`docs/patent-note.md`](docs/patent-note.md) — the full patent-scope note

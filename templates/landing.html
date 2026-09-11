@@ -1,0 +1,190 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>QubitRoute — Quantum-Inspired Route Optimizer</title>
+<script>
+  // Same early dark-mode init as the live app (see click_router.html) —
+  // if a visitor already picked a theme there, this page opens matching
+  // it instead of flashing back to light.
+  (function () {
+    try {
+      var saved = localStorage.getItem('routerTheme');
+      var wantsDark = saved ? saved === 'dark'
+        : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      if (wantsDark) document.documentElement.setAttribute('data-theme', 'dark');
+    } catch (err) { /* default to light */ }
+  })();
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%236366f1'/%3E%3Ccircle cx='12' cy='12' r='2.3' fill='%2322d3ee'/%3E%3Cellipse cx='12' cy='12' rx='9' ry='3.6' fill='none' stroke='%2322d3ee' stroke-width='1.3'/%3E%3Cellipse cx='12' cy='12' rx='9' ry='3.6' fill='none' stroke='%2322d3ee' stroke-width='1.3' transform='rotate(60 12 12)'/%3E%3Cellipse cx='12' cy='12' rx='9' ry='3.6' fill='none' stroke='%2322d3ee' stroke-width='1.3' transform='rotate(120 12 12)'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --accent-1: #6366f1;
+    --accent-2: #8b5cf6;
+    --accent-cyan: #22d3ee;
+    --ink: #0f172a;
+    --ink-soft: #475569;
+    --muted: #8ba0b5;
+    --panel-bg: rgba(255, 255, 255, 0.92);
+    --panel-border: rgba(255, 255, 255, 0.6);
+    --radius: 14px;
+    --shadow: 0 10px 32px rgba(15, 23, 42, 0.16), 0 1px 4px rgba(15, 23, 42, 0.08);
+    --page-bg: #eef1f6;
+    --surface-solid: #ffffff;
+    --border-soft: #eef0f3;
+    --border-medium: #dde3ea;
+    --surface-muted: #f8f9fb;
+  }
+  html[data-theme="dark"] {
+    --ink: #e7ecf5;
+    --ink-soft: #aab6c9;
+    --muted: #7c8aa3;
+    --panel-bg: rgba(17, 24, 39, 0.88);
+    --panel-border: rgba(255, 255, 255, 0.10);
+    --page-bg: #0a0f1c;
+    --surface-solid: #131c30;
+    --border-soft: rgba(255, 255, 255, 0.10);
+    --border-medium: rgba(255, 255, 255, 0.18);
+    --surface-muted: rgba(255, 255, 255, 0.06);
+    --shadow: 0 10px 32px rgba(0, 0, 0, 0.45), 0 1px 4px rgba(0, 0, 0, 0.3);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    min-height: 100vh; font-family: 'Inter', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    color: var(--ink); background:
+      radial-gradient(1100px 620px at 12% -8%, rgba(99, 102, 241, 0.16), transparent 60%),
+      radial-gradient(900px 560px at 100% 0%, rgba(34, 211, 238, 0.14), transparent 55%),
+      var(--page-bg);
+    transition: background 0.2s ease, color 0.2s ease;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 56px 20px 40px;
+  }
+  #brand { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
+  #brand svg { color: var(--accent-cyan); flex-shrink: 0; }
+  #brand span.name { font-size: 16px; font-weight: 800; letter-spacing: 0.2px; }
+  #brand span.badge {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
+    background: linear-gradient(120deg, var(--accent-1), var(--accent-2));
+    color: white; padding: 3px 8px; border-radius: 20px; white-space: nowrap;
+  }
+  h1 {
+    font-size: clamp(26px, 4vw, 38px); font-weight: 800; text-align: center; margin: 6px 0 4px;
+    max-width: 720px; line-height: 1.2;
+  }
+  .subtitle {
+    font-size: 13px; color: var(--muted); text-align: center; margin: 0 0 22px;
+    text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;
+  }
+  p.lede {
+    max-width: 640px; text-align: center; font-size: 15px; line-height: 1.7; color: var(--ink-soft);
+    margin: 0 0 40px;
+  }
+  p.lede b { color: var(--ink); }
+  #cards {
+    display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; max-width: 900px; width: 100%;
+  }
+  .card {
+    flex: 1 1 320px; max-width: 400px; text-align: left; padding: 26px 24px;
+    background: var(--panel-bg); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--panel-border); box-shadow: var(--shadow); border-radius: var(--radius);
+    display: flex; flex-direction: column; gap: 12px;
+    text-decoration: none; color: inherit;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .card:hover { transform: translateY(-3px); box-shadow: 0 16px 40px rgba(15, 23, 42, 0.22), 0 1px 4px rgba(15, 23, 42, 0.1); }
+  .card .icon {
+    width: 40px; height: 40px; border-radius: 11px; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(120deg, var(--accent-1), var(--accent-2)); color: white; flex-shrink: 0;
+  }
+  .card h2 { font-size: 16.5px; font-weight: 700; margin: 0; color: var(--ink); }
+  .card p { font-size: 13px; line-height: 1.6; color: var(--ink-soft); margin: 0; flex: 1 1 auto; }
+  .card .cta {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--accent-1);
+    margin-top: 4px;
+  }
+  html[data-theme="dark"] .card .cta { color: var(--accent-cyan); }
+  .card .tag {
+    display: inline-block; align-self: flex-start; font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+    text-transform: uppercase; color: var(--muted); background: var(--surface-muted);
+    border: 1px solid var(--border-soft); border-radius: 20px; padding: 3px 9px;
+  }
+  #footer {
+    margin-top: 44px; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.8;
+    max-width: 640px;
+  }
+  #footer a { color: var(--ink-soft); text-decoration: none; border-bottom: 1px solid var(--border-medium); }
+  #footer a:hover { color: var(--accent-1); border-color: var(--accent-1); }
+  @media (max-width: 480px) {
+    body { padding: 40px 16px 30px; }
+    #cards { gap: 14px; }
+    .card { padding: 20px 18px; }
+  }
+</style>
+</head>
+<body>
+  <div id="brand">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="2.4" fill="currentColor"/>
+      <ellipse cx="12" cy="12" rx="10" ry="4.1" stroke="currentColor" stroke-width="1.4"/>
+      <ellipse cx="12" cy="12" rx="10" ry="4.1" stroke="currentColor" stroke-width="1.4" transform="rotate(60 12 12)"/>
+      <ellipse cx="12" cy="12" rx="10" ry="4.1" stroke="currentColor" stroke-width="1.4" transform="rotate(120 12 12)"/>
+    </svg>
+    <span class="name">QubitRoute</span>
+    <span class="badge">Quantum-inspired</span>
+  </div>
+
+  <p class="subtitle">SIH 2026 &middot; PS SIH26137</p>
+  <h1>Constraint-aware route optimization, benchmarked honestly against classical routing</h1>
+  <p class="lede">
+    Given a set of stops and a road network whose travel times change with the time of day, this project
+    formulates the visiting-order problem as a QUBO and solves it with a simulated-annealing sampler that
+    mimics quantum-annealing search behavior — alongside a classical baseline and an <b>honest benchmark</b>
+    of where each one actually wins. Two ways to see it in action, both built on the same optimization core:
+  </p>
+
+  <div id="cards">
+    <a class="card" href="{{ url_for('live_app') }}">
+      <span class="tag">Interactive</span>
+      <span class="icon">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 2v10l6 3"/>
+        </svg>
+      </span>
+      <h2>Open the live app</h2>
+      <p>
+        Click anywhere on a real street network to drop Start/End/stop pins in any of 17+ Indian cities,
+        add precedence rules, time windows, or a multi-vehicle fleet, and get an actual solved route in
+        seconds — real OSRM road geometry, simulated time-of-day traffic, a live Insights dashboard, and
+        your last routes saved automatically.
+      </p>
+      <span class="cta">Launch the live app &rarr;</span>
+    </a>
+
+    <a class="card" href="{{ url_for('demo') }}">
+      <span class="tag">No server needed</span>
+      <span class="icon">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6"/><path d="M16 8l-4-5-4 5"/><path d="M12 3v13"/>
+        </svg>
+      </span>
+      <h2>View the instant demo</h2>
+      <p>
+        18 Indian cities' worth of routes, precomputed and baked into one self-contained file — satellite/
+        street toggle, classical-vs-quantum-inspired comparison, and a disruption simulation. Opens instantly,
+        no backend involved; the same file also works from a plain double-click, fully offline.
+      </p>
+      <span class="cta">Open the instant demo &rarr;</span>
+    </a>
+  </div>
+
+  <div id="footer">
+    Built for Smart India Hackathon 2026. Full write-up, architecture, and the honest benchmark numbers
+    live in the <a href="https://github.com/Pruthvieraj/Traffic-Router" target="_blank" rel="noopener">GitHub repo</a>'s README and <code>docs/</code>.
+  </div>
+</body>
+</html>

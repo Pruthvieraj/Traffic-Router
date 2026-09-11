@@ -37,17 +37,19 @@ from the nearest known junction" — OSRM handles real-world snapping to the
 road network itself, so any point on/near an actual road works, anywhere.
 """
 
+import csv
 import os
 import sys
 import traceback
 
 import numpy as np
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_from_directory
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
-from city_graph import list_cities, _city_center  # noqa: E402  (just city names + map centers, no network calls)
+from city_graph import list_cities, _city_center, CITIES as CITY_LANDMARKS  # noqa: E402  (just city names + map centers, no network calls)
 from clustering import solve_open_path_scalable, solve_multi_vehicle  # noqa: E402
+from qpu_solver import QPU_AVAILABLE  # noqa: E402
 from congestion import apply_incident_spikes  # noqa: E402
 from traffic_provider import get_traffic_provider  # noqa: E402
 from qubo_tsp import open_path_length, satisfies_precedence  # noqa: E402
@@ -175,18 +177,63 @@ CLUSTER_SIZE = 9
 _LEAFLET_CSS, _LEAFLET_JS = load_inline_leaflet()
 
 
+_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
+
+
 @app.route("/")
-def index():
+def landing():
+    """Product-audit Major Feature #4 / Missing Feature #6: this project
+    is actually two independent front ends (this Flask live app, and the
+    self-contained static output/multi_city_map.html flagship demo) that
+    used to have zero navigation between them. This is the shared entry
+    point the audit recommended — one paragraph explaining the project,
+    then a card for each experience. The live app itself lived at "/"
+    before this; it now lives at /app, one click away, with its own link
+    back here."""
+    return render_template("landing.html")
+
+
+@app.route("/app")
+def live_app():
     return render_template(
         "click_router.html",
         cities=list_cities(),
         centers={c: list(_city_center(c)) for c in list_cities()},
+        # Real named landmarks per city (same data src/city_graph.py's own
+        # curated network and the multi-city flagship demo use), sent here
+        # purely so the "Try an example route" first-run button has real,
+        # sensible points to seed — this app itself still routes via OSRM
+        # against ANY clicked point, not this curated set (see the module
+        # docstring above); the landmarks are just good example clicks.
+        landmarks={city: {name: list(coords) for name, coords in pts.items()}
+                   for city, pts in CITY_LANDMARKS.items()},
         leaflet_css=_LEAFLET_CSS,
         leaflet_js=_LEAFLET_JS,
         max_stops=MAX_STOPS,
         cluster_size=CLUSTER_SIZE,
         osrm_base_url=OSRM_BASE_URL,
     )
+
+
+@app.route("/demo")
+def demo():
+    """Serves the flagship static multi-city demo (see docs/deploy.md) so
+    the landing page's "View the instant demo" card has somewhere to go
+    on THIS deployment specifically, without depending on a separately
+    hosted GitHub Pages copy being enabled. The exact same file still
+    works with zero server too — a plain double-click on
+    output/multi_city_map.html or the repo-root index.html main.py kept
+    in sync with it — this route is purely a convenience link, not a new
+    way the file is generated or the only way to view it."""
+    for candidate_dir, candidate_name in (
+        (_OUTPUT_DIR, "multi_city_map.html"),
+        (os.path.dirname(__file__), "index.html"),
+    ):
+        if os.path.exists(os.path.join(candidate_dir, candidate_name)):
+            return send_from_directory(candidate_dir, candidate_name)
+    return jsonify({
+        "error": "Static demo not built yet — run main.py to generate output/multi_city_map.html.",
+    }), 404
 
 
 @app.after_request
@@ -199,6 +246,85 @@ def _record_solve_errors(response):
     if request.path in ("/api/solve", "/api/solve_fleet") and response.status_code >= 400:
         analytics.record_error()
     return response
+
+
+@app.route("/api/capabilities")
+def capabilities_endpoint():
+    """Lets the frontend ask upfront whether a solver option actually
+    works here, instead of offering it and letting the user hit an error
+    only after picking it — see the method dropdown's "Needs setup" badge
+    on method="qpu" specifically (product-audit Quick Win: a capability-
+    aware method selector).
+
+    Honest limits, stated plainly: `configured` is `installed` AND
+    `DWAVE_API_TOKEN` set in THIS process's environment — a cheap,
+    zero-network proxy, not a live connectivity/validity check, and it
+    does not detect a `dwave setup`-style config file instead of the env
+    var (see docs/quantum-hardware.md for the full real setup path). A
+    real submission can still fail even when this reports True (an
+    expired or wrong token, D-Wave's cloud being unreachable); method="qpu"
+    itself still surfaces that failure honestly rather than falling back
+    silently — this endpoint only avoids the WORST-case UX of offering an
+    option that's obviously, cheaply known to be unusable right now."""
+    dwave_configured = bool(os.environ.get("DWAVE_API_TOKEN"))
+    return jsonify({
+        "qpu": {
+            "installed": QPU_AVAILABLE,
+            "configured": QPU_AVAILABLE and dwave_configured,
+            "note": (
+                "installed = dwave-system is importable on this server. configured = "
+                "installed AND DWAVE_API_TOKEN is set in this process's environment — "
+                "a cheap proxy, not a live check. See docs/quantum-hardware.md."
+            ),
+        },
+    })
+
+
+def _coerce_csv_value(v: str):
+    """csv.DictReader always hands back strings — this turns the ones
+    that are actually numbers/booleans back into real JSON types so the
+    frontend doesn't have to re-parse every field itself. Anything that
+    doesn't cleanly parse (the "(a, b)" window tuples, rule-name text)
+    is passed through as the original string."""
+    if v in ("True", "False"):
+        return v == "True"
+    try:
+        return int(v)
+    except ValueError:
+        pass
+    try:
+        return float(v)
+    except ValueError:
+        return v
+
+
+def _read_benchmark_csv(filename: str) -> list:
+    path = os.path.join(_OUTPUT_DIR, filename)
+    if not os.path.exists(path):
+        return []
+    with open(path, newline="") as f:
+        return [{k: _coerce_csv_value(v) for k, v in row.items()} for row in csv.DictReader(f)]
+
+
+@app.route("/api/insights")
+def insights_endpoint():
+    """Serves the benchmark CSVs main.py already regenerates into
+    output/*.csv (see src/benchmark.py) as JSON — the Insights dashboard's
+    entire backend. No new computation happens here: every number already
+    exists in a committed CSV, this just makes it reachable by the
+    frontend instead of only a folder of files a user browsing the live
+    app would never open. If output/ doesn't have a given experiment's
+    CSV yet (a fresh checkout that hasn't run main.py), that key comes
+    back as an empty list rather than an error — the dashboard shows a
+    "not run yet" state for it instead of failing the whole panel."""
+    return jsonify({
+        "experiment_1": _read_benchmark_csv("experiment_1_unconstrained.csv"),
+        "experiment_2": _read_benchmark_csv("experiment_2_constrained.csv"),
+        "experiment_3": _read_benchmark_csv("experiment_3_composed.csv"),
+        "experiment_4": _read_benchmark_csv("experiment_4_multi_objective.csv"),
+        "experiment_5": _read_benchmark_csv("experiment_5_time_windows.csv"),
+        "experiment_6": _read_benchmark_csv("experiment_6_cvrp_baseline.csv"),
+    })
 
 
 @app.route("/api/analytics")

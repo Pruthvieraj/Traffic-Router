@@ -36,9 +36,19 @@ def test_analytics_endpoint_is_documented(spec):
     assert "get" in spec["paths"]["/api/analytics"]
 
 
+def test_capabilities_endpoint_is_documented(spec):
+    assert "/api/capabilities" in spec["paths"]
+    assert "get" in spec["paths"]["/api/capabilities"]
+
+
+def test_insights_endpoint_is_documented(spec):
+    assert "/api/insights" in spec["paths"]
+    assert "get" in spec["paths"]["/api/insights"]
+
+
 @pytest.mark.parametrize("schema_name", [
     "SolveRequest", "SolveResponse", "SolveFleetRequest", "SolveFleetResponse",
-    "AnalyticsResponse", "ErrorResponse", "RouteExplanation",
+    "AnalyticsResponse", "CapabilitiesResponse", "InsightsResponse", "ErrorResponse", "RouteExplanation",
 ])
 def test_expected_schemas_are_defined(spec, schema_name):
     assert schema_name in spec["components"]["schemas"]

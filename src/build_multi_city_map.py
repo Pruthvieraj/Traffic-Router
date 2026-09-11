@@ -123,6 +123,8 @@ HTML_TEMPLATE = r"""<!doctype html>
     background:#1b2733; color:white; box-sizing:border-box; flex-wrap:wrap;
   }
   #topbar h1 { font-size:15px; margin:0; font-weight:600; white-space:nowrap; }
+  #topbar h1 a { color:inherit; text-decoration:none; }
+  #topbar h1 a:hover { text-decoration:underline; }
   #topbar select, #topbar button {
     font-size:13px; padding:6px 10px; border-radius:6px; border:1px solid #46586b;
     background:#26374a; color:white; cursor:pointer;
@@ -142,7 +144,7 @@ HTML_TEMPLATE = r"""<!doctype html>
 </head>
 <body>
 <div id="topbar">
-  <h1>Quantum-Inspired Route Optimizer</h1>
+  <h1><a href="/" title="Back to QubitRoute home (when viewed via the hosted app)">Quantum-Inspired Route Optimizer</a></h1>
   <select id="citySelect"></select>
   <select id="basemapSelect">
     <option value="satellite">Satellite view</option>

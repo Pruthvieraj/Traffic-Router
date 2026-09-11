@@ -489,7 +489,7 @@ function footer(slide, n) {
   title(s, "Tested, documented, and deployable", { color: WHITE });
 
   const stats = [
-    ["275", "automated tests\n(pytest + Playwright + Node)"],
+    ["476", "automated tests\n(pytest + Playwright + Node)"],
     ["100%", "of the test suite runs\non every push via CI"],
     ["3", "solvers benchmarked side by side\n(2-opt, OR-Tools, QUBO+SA)"],
     ["1", "command to self-host\n(Dockerfile included)"],
@@ -562,11 +562,11 @@ function footer(slide, n) {
   const cols = [
     {
       x: 0.6, heading: "Already shipped", color: GOOD,
-      items: ["Precedence constraints", "Multi-vehicle capacity (count or weight)", "OR-Tools + QAOA comparisons", "Live usage analytics", "Docker + OpenAPI"],
+      items: ["Precedence constraints", "Numeric time-window constraints", "Multi-vehicle capacity (count or weight)", "OR-Tools + QAOA comparisons", "Live usage analytics", "Docker + OpenAPI"],
     },
     {
       x: 6.8, heading: "Honest next steps", color: WARN,
-      items: ["Numeric time windows (same penalty-term pattern)", "A real, paid traffic API (interface already pluggable)", "Cross-cluster precedence above 9 stops", "Shared, durable analytics storage past a single worker"],
+      items: ["A real, paid traffic API (interface already pluggable)", "Cross-cluster precedence/time windows above 9 stops", "Shared, durable analytics storage past a single worker"],
     },
   ];
   cols.forEach((c) => {

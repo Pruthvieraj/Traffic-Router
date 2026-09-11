@@ -15,7 +15,7 @@ pip install pytest
 pytest tests/ -v
 ```
 
-**377 Python tests** (421 total including the layout suite below, plus a
+**389 Python tests** (462 total including the layout suite below, plus a
 separate 14-test Node.js frontend suite — see below), covering the QUBO
 solver, the classical baselines, the multi-objective time/distance
 trade-off (`combine_objectives`, real-vs-cosmetic-objective checks), route
@@ -86,7 +86,7 @@ runner, no npm install):
 node --test tests/frontend/*.test.js
 ```
 
-**And a 44-test real-browser layout suite** (`tests/test_layout.py`),
+**And a 73-test real-browser layout suite** (`tests/test_layout.py`),
 added after a real bug shipped through a fully green test suite and
 several rounds of manual screenshots: the topbar had a fixed height
 combined with `flex-wrap`, so on a narrower browser window its second row
@@ -128,6 +128,28 @@ it's missing rather than failing the rest of the suite):
 pip install playwright && playwright install --with-deps chromium
 pytest tests/test_layout.py -v
 ```
+
+The same suite also covers everything added since the product-audit-driven
+UI pass (see docs/live-app.md's "The product-audit pass" section): the
+progressive-disclosure topbar/Options drawer (every moved control still
+reachable, badges reflecting active rule counts); Route History &
+Favorites (a solved route recorded to localStorage and reloaded through
+the exact same restore path a shared link uses, star/delete wiring, and
+that the eviction cap never touches a favorited entry); the `/` landing
+page and `/app`/`/demo` split (cross-links round-tripping, and that the
+first-run tour appears once for a genuinely new visitor, advances only on
+real actions, never reappears once dismissed, and correctly stays silent
+for a visitor who already has state); the on-map precedence connector and
+time-window clock badge (drawn, followed on drag, and cleared correctly
+when a rule or its pin is removed); the Quantum vs. Classical Arena's
+countdown/race/winner-banner sequence (deterministic via stubbed
+`/api/solve` responses, and confirmed to skip entirely under automation
+so it doesn't slow down every other Compare-panel test); and the mobile
+pass at 375px width (the Options drawer closing for its own launched
+panels only at that width, every centered panel's entrance animation
+never overflowing the viewport, and the Insights dashboard staying
+reachable through the drawer specifically when its normal topbar entry
+point hides).
 
 All three suites run automatically on every push via
 `.github/workflows/tests.yml` — that's the badge at the top of this

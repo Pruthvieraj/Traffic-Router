@@ -138,7 +138,7 @@ def _no_topbar_overflow(page):
 @pytest.mark.parametrize("width", [375, 1000, 1280, 1440, 1920])
 def test_topbar_controls_never_overflow_the_bar(live_server, browser, width):
     page = browser.new_page(viewport={"width": width, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
     overflowing = _no_topbar_overflow(page)
     page.close()
     assert overflowing == [], f"topbar controls render outside #topbar at width={width}px: {overflowing}"
@@ -151,7 +151,7 @@ def test_content_area_starts_exactly_where_topbar_ends(live_server, browser):
     relying on a hardcoded pixel offset that only happened to be correct
     for one specific topbar height."""
     page = browser.new_page(viewport={"width": 1000, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
     gap = page.evaluate("""
         () => {
             const bar = document.getElementById('topbar').getBoundingClientRect();
@@ -168,7 +168,8 @@ def test_fleet_mode_relabels_first_pin_as_depot(live_server, browser):
     must relabel the first pin 'D' (Depot) instead of 'S' (Start) — this is
     how a user tells fleet mode is actually active, not just cosmetic."""
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # Fleet select now lives in the Options drawer
     page.select_option("#vehicleSelect", "3")
     box = page.locator("#map").bounding_box()
     page.mouse.click(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.5)
@@ -181,7 +182,7 @@ def test_single_vehicle_mode_still_labels_first_pin_as_start(live_server, browse
     """The flip side of the above — default (1 vehicle) mode must be
     completely unaffected by the fleet-mode relabeling logic."""
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
     box = page.locator("#map").bounding_box()
     page.mouse.click(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.5)
     label = page.evaluate("document.querySelector('.pin-label').textContent")
@@ -195,7 +196,8 @@ def test_capacity_input_only_shows_in_fleet_mode(live_server, browser):
     selected — it's meaningless outside fleet mode and shouldn't clutter
     the topbar there."""
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # Fleet/capacity controls now live in the Options drawer
 
     hidden_initially = page.evaluate("document.getElementById('capacityWrap').offsetParent === null")
     page.select_option("#vehicleSelect", "2")
@@ -215,7 +217,7 @@ def test_city_dropdown_covers_pan_india(live_server, browser):
     Gurgaon, Noida) — it should now offer at least 17, spanning the rest
     of the country too."""
     page = browser.new_page(viewport={"width": 1400, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
     values = page.eval_on_selector_all("#citySelect option", "els => els.map(e => e.value)")
     page.close()
     assert len(values) >= 17
@@ -230,7 +232,7 @@ def test_voice_search_mic_button_has_no_stray_dropdown_chevron(live_server, brow
     caught once during development: the mic button rendered with a
     stray chevron baked into it)."""
     page = browser.new_page(viewport={"width": 1400, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
     style = page.evaluate("""
         () => {
             const cs = getComputedStyle(document.getElementById('micBtn'));
@@ -248,7 +250,7 @@ def test_incident_button_renders_for_every_stop_marker_line(live_server, browser
     button appears exactly once per stop-arrival line — the UI hook the
     dynamic-re-optimization feature depends on."""
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
     button_count = page.evaluate("""
         () => {
             const legs = [
@@ -293,7 +295,7 @@ def test_search_falls_back_to_a_broader_query_and_finds_a_result(live_server, br
             route.fulfill(json=[])
 
     page.route("**nominatim.openstreetmap.org/search**", handle_route)
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
     page.select_option("#citySelect", "Pune")
     page.fill("#searchInput", "Sukhwani Gracia C")
     page.wait_for_function(
@@ -313,7 +315,7 @@ def test_search_shows_a_helpful_hint_when_nothing_is_found_anywhere(live_server,
     being incomplete."""
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     page.route("**nominatim.openstreetmap.org/search**", lambda route: route.fulfill(json=[]))
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
     page.fill("#searchInput", "Totally Nonexistent Society Zzzqx")
     page.wait_for_function(
         "document.getElementById('suggestions').style.display === 'block'", timeout=5000,
@@ -331,7 +333,8 @@ def test_info_icon_tooltip_shows_its_text_on_click_and_hides_on_outside_click(li
     title text (moved to data-tip so the native browser tooltip doesn't
     also fire), and clicking elsewhere should hide it again."""
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # every info-icon now lives inside the Options drawer
 
     icon = page.locator(".info-icon").first
     assert icon.get_attribute("title") is None  # native tooltip attribute removed
@@ -357,7 +360,8 @@ def test_info_icon_tooltip_stays_within_the_viewport(live_server, browser):
     the tooltip bubble must never be positioned so it clips off the left
     or right edge of the window, regardless of window width."""
     page = browser.new_page(viewport={"width": 375, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # every info-icon now lives inside the Options drawer
     page.locator(".info-icon").first.click()
     page.wait_for_function(
         "document.getElementById('iconTooltip').classList.contains('visible')", timeout=3000,
@@ -389,7 +393,8 @@ def test_bulk_import_adds_direct_coordinates_and_geocoded_addresses(live_server,
         }])
 
     page.route("**nominatim.openstreetmap.org/search**", handle_route)
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # Import stops now lives in the Options drawer
 
     page.click("#importBtn")
     page.wait_for_function("document.getElementById('importPanel').style.display === 'flex'")
@@ -412,7 +417,8 @@ def test_bulk_import_reports_lines_it_could_not_place(live_server, browser):
     silently dropping it or closing as if everything succeeded."""
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     page.route("**nominatim.openstreetmap.org/search**", lambda route: route.fulfill(json=[]))
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # Import stops now lives in the Options drawer
 
     page.click("#importBtn")
     page.wait_for_function("document.getElementById('importPanel').style.display === 'flex'")
@@ -446,7 +452,8 @@ def test_share_button_copies_a_link_that_encodes_the_current_pins_and_settings(l
             value: { writeText: (text) => { window.__copied = text; return Promise.resolve(); } },
         });
     """)
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # Method select and Share now live in the Options drawer
 
     page.select_option("#citySelect", "Mumbai")
     page.select_option("#methodSelect", "classical")
@@ -474,9 +481,15 @@ def test_opening_a_shared_link_restores_its_pins_and_settings(live_server, brows
         "c": "Chennai", "m": "quantum", "h": "18.5", "v": "1", "cap": None,
         "p": [[13.0827, 80.2707], [13.0475, 80.2824], [13.0604, 80.2496]],
     }
-    url = f"{live_server}/?r={urllib.parse.quote(json.dumps(state))}"
+    url = f"{live_server}/app?r={urllib.parse.quote(json.dumps(state))}"
 
     page = browser.new_page(viewport={"width": 1280, "height": 900})
+    # Stub real map tiles — this test doesn't care what's drawn under the
+    # pins, only that they got restored, and letting "networkidle" wait on
+    # real (possibly slow/blocked-in-sandbox) tile requests risks the
+    # restore notice's own auto-dismiss timer (~4.2s) elapsing before this
+    # test gets a chance to read it.
+    _stub_map_tiles(page)
     page.goto(url, wait_until="networkidle", timeout=15000)
     page.wait_for_function("clickedPoints.length === 3", timeout=5000)
 
@@ -512,7 +525,7 @@ _SYNTHETIC_ROUTE_EXPORT_JS = """
 
 def test_download_gpx_produces_a_valid_gpx_file_with_waypoints_and_a_track(live_server, browser):
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
     page.evaluate(_SYNTHETIC_ROUTE_EXPORT_JS)
 
     with page.expect_download() as dl_info:
@@ -527,7 +540,7 @@ def test_download_gpx_produces_a_valid_gpx_file_with_waypoints_and_a_track(live_
 
 def test_print_itinerary_fills_the_print_area_and_triggers_print(live_server, browser):
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
     page.evaluate(_SYNTHETIC_ROUTE_EXPORT_JS)
     page.evaluate("window.__printed = false; window.print = () => { window.__printed = true; };")
     page.evaluate("printItinerary()")
@@ -549,7 +562,7 @@ def test_theme_toggle_switches_theme_and_persists_across_reloads(live_server, br
     reload afterward should come back dark — the whole point of persisting
     the choice in localStorage rather than just an in-memory toggle."""
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
 
     # No stored preference and a headless browser's default OS-level
     # preference is light, so the page should start undecorated (light).
@@ -577,7 +590,7 @@ def test_theme_toggle_switches_theme_and_persists_across_reloads(live_server, br
 
 def test_theme_toggle_switches_back_to_light(live_server, browser):
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
 
     page.click("#themeBtn")
     page.wait_for_function("document.documentElement.getAttribute('data-theme') === 'dark'", timeout=3000)
@@ -608,7 +621,8 @@ def test_theme_toggle_also_swaps_the_street_basemap_tiles(live_server, browser):
     still the one test in this file that can't run in a network-restricted
     sandbox; unrelated to whichever basemap provider is behind the scenes."""
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # Map view (basemap select) now lives in the Options drawer
 
     page.select_option("#basemapSelect", "street")
     page.wait_for_timeout(200)
@@ -633,6 +647,7 @@ def test_theme_toggle_also_swaps_the_street_basemap_tiles(live_server, browser):
     # immediately on switching to street view, with no extra theme click.
     page.evaluate("localStorage.setItem('routerTheme', 'dark')")
     page.reload(wait_until="networkidle")
+    page.click("#optionsBtn")  # drawer resets closed on reload
     page.select_option("#basemapSelect", "street")
     page.wait_for_timeout(200)
     dark_on_reload = page.evaluate("map.hasLayer(streetLayerDark)")
@@ -656,7 +671,7 @@ def test_theme_toggle_also_recolors_the_topbar_itself(live_server, browser):
     won only for background-image. Real buttons must show no background
     image at all, in either theme — only <select> elements should."""
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
 
     topbar_bg_light = page.eval_on_selector("#topbar", "el => getComputedStyle(el).backgroundImage")
     topbar_text_light = page.eval_on_selector("#topbar", "el => getComputedStyle(el).color")
@@ -687,12 +702,13 @@ def test_theme_toggle_also_recolors_the_topbar_itself(live_server, browser):
 
 def test_precedence_panel_lets_you_add_and_remove_a_rule(live_server, browser):
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
 
     for x, y in [(200, 200), (300, 200), (400, 200), (500, 200)]:
         page.click("#map", position={"x": x, "y": y})
     page.wait_for_function("clickedPoints.length === 4")
 
+    page.click("#optionsBtn")  # Precedence now lives in the Options drawer
     page.click("#precedenceBtn")
     page.wait_for_function("document.getElementById('precedencePanel').style.display === 'flex'")
 
@@ -715,11 +731,12 @@ def test_precedence_panel_lets_you_add_and_remove_a_rule(live_server, browser):
 
 def test_precedence_panel_rejects_duplicate_and_reversed_rules(live_server, browser):
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
     for x, y in [(200, 200), (300, 200), (400, 200), (500, 200)]:
         page.click("#map", position={"x": x, "y": y})
     page.wait_for_function("clickedPoints.length === 4")
 
+    page.click("#optionsBtn")  # Precedence now lives in the Options drawer
     page.click("#precedenceBtn")
     page.wait_for_function("document.getElementById('precedencePanel').style.display === 'flex'")
     page.select_option("#precUSelect", "1")
@@ -742,7 +759,8 @@ def test_precedence_panel_rejects_duplicate_and_reversed_rules(live_server, brow
 
 def test_precedence_button_hides_in_fleet_mode(live_server, browser):
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # Precedence/Fleet now live in the Options drawer
     assert page.eval_on_selector("#precedenceBtn", "el => getComputedStyle(el).display") != "none"
 
     page.select_option("#vehicleSelect", "2")
@@ -756,7 +774,7 @@ def test_precedence_rules_remap_after_a_solve_and_drop_on_stop_removal(live_serv
     stops as clickedPoints changes shape — no real solve/network needed,
     same direct-function-call pattern as the other JS-logic tests here."""
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
 
     remapped = page.evaluate("""
         () => {
@@ -782,12 +800,13 @@ def test_precedence_rules_remap_after_a_solve_and_drop_on_stop_removal(live_serv
 
 def test_time_windows_panel_lets_you_add_and_remove_a_rule(live_server, browser):
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
 
     for x, y in [(200, 200), (300, 200), (400, 200), (500, 200)]:
         page.click("#map", position={"x": x, "y": y})
     page.wait_for_function("clickedPoints.length === 4")
 
+    page.click("#optionsBtn")  # Time windows now lives in the Options drawer
     page.click("#timeWindowsBtn")
     page.wait_for_function("document.getElementById('timeWindowsPanel').style.display === 'flex'")
 
@@ -812,11 +831,12 @@ def test_time_windows_panel_lets_you_add_and_remove_a_rule(live_server, browser)
 
 def test_time_windows_panel_rejects_invalid_ranges(live_server, browser):
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
     for x, y in [(200, 200), (300, 200), (400, 200)]:
         page.click("#map", position={"x": x, "y": y})
     page.wait_for_function("clickedPoints.length === 3")
 
+    page.click("#optionsBtn")  # Time windows now lives in the Options drawer
     page.click("#timeWindowsBtn")
     page.wait_for_function("document.getElementById('timeWindowsPanel').style.display === 'flex'")
 
@@ -840,7 +860,8 @@ def test_time_windows_panel_rejects_invalid_ranges(live_server, browser):
 
 def test_time_windows_button_hides_in_fleet_mode(live_server, browser):
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # Time windows/Fleet now live in the Options drawer
     assert page.eval_on_selector("#timeWindowsBtn", "el => getComputedStyle(el).display") != "none"
 
     page.select_option("#vehicleSelect", "2")
@@ -855,7 +876,7 @@ def test_time_windows_remap_after_a_solve_and_drop_on_stop_removal(live_server, 
     _removeTimeWindowForRemovedIndex with synthetic state, no real
     solve/network needed."""
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
 
     remapped = page.evaluate("""
         () => {
@@ -881,7 +902,8 @@ def test_time_windows_remap_after_a_solve_and_drop_on_stop_removal(live_server, 
 
 def test_weights_button_only_appears_in_fleet_mode_with_weighted_capacity(live_server, browser):
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # Fleet/capacity controls now live in the Options drawer
 
     # single-vehicle mode: capacityWrap (and weightsBtn inside it) is hidden entirely
     assert page.eval_on_selector("#capacityWrap", "el => getComputedStyle(el).display") == "none"
@@ -897,7 +919,8 @@ def test_weights_button_only_appears_in_fleet_mode_with_weighted_capacity(live_s
 
 def test_weights_panel_lists_every_current_stop_and_saves_edits(live_server, browser):
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # Fleet/capacity controls now live in the Options drawer
     page.select_option("#vehicleSelect", "2")
     page.select_option("#capacityModeSelect", "weight")
 
@@ -924,7 +947,7 @@ def test_stop_weight_helper_drops_removed_index_and_shifts_others(live_server, b
     above: exercise _removeWeightForRemovedIndex with synthetic stopWeights
     state, no real map interaction needed."""
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
 
     after_removal = page.evaluate("""
         () => {
@@ -1009,7 +1032,7 @@ def test_live_reopt_button_only_enables_after_a_successful_solve(live_server, br
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     _stub_map_tiles(page)
     _stub_osrm(page, 3)
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
 
     disabled_before = page.eval_on_selector("#liveReoptBtn", "el => el.disabled")
     _solve_three_stops(page)
@@ -1024,7 +1047,8 @@ def test_live_reopt_start_logs_a_tick_and_stop_resets_the_button(live_server, br
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     _stub_map_tiles(page)
     _stub_osrm(page, 3)
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # Live re-optimize now lives in the Options drawer
     _solve_three_stops(page)
 
     page.click("#liveReoptBtn")
@@ -1056,13 +1080,20 @@ def test_live_reopt_stops_and_disables_when_points_are_cleared(live_server, brow
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     _stub_map_tiles(page)
     _stub_osrm(page, 3)
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # Live re-optimize now lives in the Options drawer
     _solve_three_stops(page)
 
     page.click("#liveReoptBtn")
     page.wait_for_function(
         "document.getElementById('liveFeed-list').children.length > 0", timeout=10000,
     )
+    # A solved route exists here, so Clear now arms a "click again to
+    # confirm" state on its first click (see the confirm-before-clear
+    # feature added to click_router.html) rather than clearing immediately
+    # — two clicks are needed to actually confirm the destructive action.
+    page.click("#clearBtn")
+    page.wait_for_selector("#clearBtn.confirm-armed")
     page.click("#clearBtn")
 
     is_active_after_clear = page.eval_on_selector("#liveReoptBtn", "el => el.classList.contains('live-active')")
@@ -1071,6 +1102,90 @@ def test_live_reopt_stops_and_disables_when_points_are_cleared(live_server, brow
     page.close()
     assert is_active_after_clear is False
     assert disabled_after_clear is True
+
+
+def test_clear_wipes_immediately_when_nothing_would_be_lost(live_server, browser):
+    """The confirm-armed state (see the test above) exists specifically to
+    protect a solved route / rules / weights — it should NOT get in the
+    way of the common case of clearing an empty or barely-started map."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+
+    page.evaluate("() => { addPoint(12.97, 77.59); }")  # one pin, never solved
+    page.click("#clearBtn")
+
+    n_points_after = page.evaluate("() => clickedPoints.length")
+    armed_after = page.eval_on_selector("#clearBtn", "el => el.classList.contains('confirm-armed')")
+
+    page.close()
+    assert n_points_after == 0
+    assert armed_after is False
+
+
+def test_confirm_armed_clear_button_disarms_itself_after_a_timeout(live_server, browser):
+    """A first click that arms the button but is never followed up on
+    should quietly revert on its own, rather than leave a stale "click
+    again to confirm" label sitting on the button forever."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    _stub_osrm(page, 3)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    _solve_three_stops(page)
+
+    page.click("#clearBtn")
+    page.wait_for_selector("#clearBtn.confirm-armed")
+    page.wait_for_selector("#clearBtn:not(.confirm-armed)", timeout=6000)  # the 4s arm timer expiring
+
+    n_points_still_there = page.evaluate("() => clickedPoints.length")
+
+    page.close()
+    assert n_points_still_there == 3  # never actually cleared — the second click never came
+
+
+def test_stats_strip_loads_real_analytics_numbers(live_server, browser):
+    """Product-audit Quick Win #1: /api/analytics was fully built and
+    tested server-side but never surfaced anywhere in the UI. This checks
+    the live stats strip actually replaces its placeholder text with a
+    real number from that endpoint, not that it gets stuck on
+    "Loading live stats..." forever."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+
+    page.wait_for_function(
+        "!document.getElementById('statsStripText').textContent.includes('Loading')", timeout=10000,
+    )
+    text = page.inner_text("#statsStripText")
+
+    page.close()
+    assert "Loading" not in text
+    assert "solve" in text.lower() or "deployment" in text.lower()
+
+
+def test_insights_panel_opens_and_renders_real_benchmark_charts(live_server, browser):
+    """Product-audit Major Feature #1: the honest benchmark finding
+    (classical wins on plain routing, quantum-inspired wins once a real
+    constraint is added) should be visible INSIDE the product, not just
+    in a README. This runs against the real app.py subprocess with this
+    checkout's actual output/*.csv files, so a rendered "Experiment 1"
+    card here means /api/insights served real data end to end, not a
+    mock."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+
+    page.evaluate("() => openInsightsPanel()")
+    page.wait_for_function(
+        "document.getElementById('insightsCharts').querySelectorAll('.insight-card').length > 0", timeout=10000,
+    )
+    panel_visible = page.eval_on_selector("#insightsPanel", "el => getComputedStyle(el).display")
+    charts_text = page.inner_text("#insightsCharts")
+
+    page.close()
+    assert panel_visible == "flex"
+    assert "Experiment 1" in charts_text
+    assert "Experiment 2" in charts_text
 
 
 def test_live_reopt_works_in_fleet_mode_and_ticks_without_crashing(live_server, browser):
@@ -1083,7 +1198,8 @@ def test_live_reopt_works_in_fleet_mode_and_ticks_without_crashing(live_server, 
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     _stub_map_tiles(page)
     _stub_osrm(page, 4)
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # Fleet select and Live re-optimize now live in the Options drawer
 
     page.select_option("#vehicleSelect", "2")
     page.evaluate("""
@@ -1118,7 +1234,8 @@ def test_live_reopt_works_in_fleet_mode_and_ticks_without_crashing(live_server, 
 
 def test_compare_button_enabled_state_tracks_point_count_and_fleet_mode(live_server, browser):
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.click("#optionsBtn")  # Fleet/Compare controls now live in the Options drawer
 
     disabled_with_no_points = page.eval_on_selector("#compareBtn", "el => el.disabled")
     page.evaluate("() => { addPoint(12.97, 77.59); addPoint(12.93, 77.62); }")
@@ -1140,11 +1257,12 @@ def test_compare_methods_draws_both_routes_and_shows_a_side_by_side_table(live_s
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     _stub_map_tiles(page)
     _stub_osrm(page, 3)
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
     page.evaluate(
         "() => { addPoint(12.97, 77.59); addPoint(12.93, 77.62); addPoint(12.91, 77.63); }"
     )
 
+    page.click("#optionsBtn")  # Compare methods now lives in the Options drawer
     page.click("#compareBtn")
     page.wait_for_function(
         "document.getElementById('compareContent').textContent.includes('Drive time')", timeout=10000,
@@ -1174,7 +1292,7 @@ def test_compare_methods_omits_time_windows_from_the_classical_request_only(live
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     _stub_map_tiles(page)
     _stub_osrm(page, 3)
-    page.goto(live_server, wait_until="networkidle", timeout=15000)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
     page.evaluate(
         "() => { addPoint(12.97, 77.59); addPoint(12.93, 77.62); addPoint(12.91, 77.63); }"
     )
@@ -1192,6 +1310,7 @@ def test_compare_methods_omits_time_windows_from_the_classical_request_only(live
             };
         }
     """)
+    page.click("#optionsBtn")  # Compare methods now lives in the Options drawer
     page.click("#compareBtn")
     page.wait_for_function("window.__solveBodies && window.__solveBodies.length === 2", timeout=10000)
     bodies = page.evaluate("window.__solveBodies")
@@ -1200,3 +1319,584 @@ def test_compare_methods_omits_time_windows_from_the_classical_request_only(live
     by_method = {b["method"]: b for b in bodies}
     assert by_method["quantum"]["time_windows"] == {"1": [5, 20]}
     assert by_method["classical"]["time_windows"] == {}
+
+
+# ---------- Route History & Favorites ("My Routes" panel) ----------
+# Product-audit Major Feature #2. Backend: none — everything here is
+# localStorage, so these tests drive the real browser storage the same
+# way a real visitor's would persist, with no server involved beyond the
+# one real /api/solve round trip in the first test.
+
+def test_history_records_a_solved_route_and_reloads_it_after_clearing(live_server, browser):
+    """A real solve should append a localStorage entry with the right
+    shape, and — the actual point of the feature — clicking Load in the
+    My Routes panel after the map has been cleared should bring the same
+    pins and city back, exactly like opening a shared link does."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    _stub_osrm(page, 3)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.select_option("#citySelect", "Chennai")
+    _solve_three_stops(page)
+
+    history = page.evaluate("JSON.parse(localStorage.getItem('routerHistory'))")
+    assert len(history) == 1
+    assert history[0]["stops"] == 3
+    assert history[0]["mode"] == "single"
+    assert history[0]["state"]["c"] == "Chennai"
+    assert history[0]["favorite"] is False
+
+    # Clear the map (two clicks: the confirm-armed pattern, since a solved
+    # route is "something to lose") so Load has something real to prove.
+    page.click("#clearBtn")
+    page.wait_for_selector("#clearBtn.confirm-armed")
+    page.click("#clearBtn")
+    page.wait_for_function("clickedPoints.length === 0")
+
+    page.click("#optionsBtn")
+    page.click("#historyBtn")
+    page.wait_for_function("document.getElementById('historyPanel').style.display === 'flex'")
+    page.click("#historyList .history-load")
+    page.wait_for_function("clickedPoints.length === 3", timeout=5000)
+
+    city_after_load = page.eval_on_selector("#citySelect", "el => el.value")
+    panel_closed = page.eval_on_selector("#historyPanel", "el => el.style.display") == "none"
+    page.close()
+    assert city_after_load == "Chennai"
+    assert panel_closed
+
+
+def test_history_star_toggles_favorite_and_delete_removes_the_entry(live_server, browser):
+    """Exercises the star/delete controls directly against a synthetic
+    entry (no real solve needed — same direct-function-call pattern the
+    precedence/time-window remap tests above use) so this doesn't depend
+    on a real OSRM round trip to check UI wiring."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+
+    page.evaluate("""
+        () => {
+            addPoint(12.97, 77.59); addPoint(12.93, 77.62);
+            _recordHistoryEntry({ mode: 'single', costMinutes: 42, savingsPct: 10 });
+        }
+    """)
+    page.click("#optionsBtn")
+    page.click("#historyBtn")
+    page.wait_for_function("document.getElementById('historyList').children.length === 1")
+
+    page.click(".history-star")
+    favorite_after_star = page.evaluate(
+        "JSON.parse(localStorage.getItem('routerHistory'))[0].favorite"
+    )
+    assert favorite_after_star is True
+    assert "active" in (page.get_attribute(".history-star", "class") or "")
+
+    page.click(".history-delete")
+    page.wait_for_selector("#historyList .history-empty")  # real entry gone, empty-state placeholder shown instead
+    remaining = page.evaluate("JSON.parse(localStorage.getItem('routerHistory'))")
+    page.close()
+    assert remaining == []
+
+
+def test_history_never_evicts_a_favorited_entry_past_the_unstarred_cap(live_server, browser):
+    """The eviction cap only ever trims UNSTARRED entries — a starred
+    route has to survive no matter how many newer solves pile up after
+    it, since the whole point of starring one is "keep this forever"."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    cap = page.evaluate("_HISTORY_MAX_UNSTARRED")  # read the real constant, don't duplicate it here
+
+    result = page.evaluate("""
+        () => {
+            const seed = [];
+            for (let i = 0; i < _HISTORY_MAX_UNSTARRED + 5; i++) {
+                seed.push({
+                    id: `seed-${i}`, savedAt: Date.now() - i, favorite: false,
+                    state: { c: 'Pune', m: 'quantum', h: 'now', v: '1', cap: null, cm: 'count', p: [[18.5, 73.8]], prec: [], tw: {}, w: {} },
+                    mode: 'single', vehicles: null, costMinutes: 10, savingsPct: 5, stops: 1,
+                });
+            }
+            seed[seed.length - 1].favorite = true; // the OLDEST entry is starred
+            localStorage.setItem('routerHistory', JSON.stringify(seed));
+
+            addPoint(12.97, 77.59); addPoint(12.93, 77.62);
+            _recordHistoryEntry({ mode: 'single', costMinutes: 99, savingsPct: 1 }); // one more solve triggers the trim
+
+            const after = JSON.parse(localStorage.getItem('routerHistory'));
+            return {
+                total: after.length,
+                favoritedStillThere: after.some(e => e.id === `seed-${_HISTORY_MAX_UNSTARRED + 4}`),
+                unstarredCount: after.filter(e => !e.favorite).length,
+            };
+        }
+    """)
+    page.close()
+    assert result["favoritedStillThere"] is True
+    assert result["unstarredCount"] == cap
+    assert result["total"] == cap + 1  # the cap's worth of unstarred entries, plus the one favorite
+
+
+# ---------- Landing page + first-run tour (Major #4) ----------
+# The live app itself gates its onboarding tour behind `!navigator.webdriver`
+# (see the `_maybeStartTour` IIFE at the bottom of click_router.html) so it
+# doesn't pop up uninvited over every other test in this file, which all run
+# against a fresh, empty-localStorage page the same way a genuine first-time
+# visitor would arrive. These tests are the deliberate exception: they spoof
+# `navigator.webdriver` back to `false` before navigating, so they exercise
+# the exact code path a real first-time visitor hits.
+
+def _allow_tour(page):
+    """Undo Playwright's navigator.webdriver=true for this page, so the
+    tour's automation guard doesn't also suppress it here — the one place
+    that guard should NOT apply."""
+    page.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => false });")
+
+
+def test_landing_page_links_to_the_live_app_and_the_static_demo(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(live_server, wait_until="networkidle", timeout=15000)
+
+    heading_visible = page.is_visible("h1")
+    app_card_href = page.eval_on_selector("#cards a:nth-of-type(1)", "el => el.getAttribute('href')")
+    demo_card_href = page.eval_on_selector("#cards a:nth-of-type(2)", "el => el.getAttribute('href')")
+
+    page.click("#cards a:nth-of-type(1)")
+    page.wait_for_selector("#topbar", timeout=15000)
+    landed_on_live_app = "/app" in page.url
+
+    page.close()
+    assert heading_visible
+    assert app_card_href == "/app"
+    assert demo_card_href == "/demo"
+    assert landed_on_live_app
+
+
+def test_brand_link_in_live_app_returns_to_the_landing_page(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+
+    page.click("#brand")
+    page.wait_for_selector("#cards", timeout=15000)
+    back_on_landing = page.url.rstrip("/") == live_server.rstrip("/")
+
+    page.close()
+    assert back_on_landing
+
+
+def test_first_run_tour_appears_for_a_fresh_visitor_and_advances_on_real_actions(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _allow_tour(page)
+    _stub_map_tiles(page)
+    _stub_osrm(page, 3)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+
+    # Step 1: shown immediately to an empty-state visitor, pointing them at
+    # the map rather than a specific element.
+    page.wait_for_selector("#tourCallout.visible", timeout=5000)
+    assert "Click anywhere on the map" in page.inner_text("#tourText")
+
+    # Step 2: advances only once 2 points exist — not on the first point.
+    # (textContent, not inner_text — the label is CSS text-transform:
+    # uppercase, which inner_text renders as "STEP 1 OF 3".)
+    page.evaluate("() => addPoint(12.97, 77.59)")
+    still_step_1 = "Step 1 of 3" == page.eval_on_selector("#tourStepLabel", "el => el.textContent")
+    page.evaluate("() => addPoint(12.93, 77.62)")
+    page.wait_for_function("document.getElementById('tourStepLabel').textContent === 'Step 2 of 3'", timeout=5000)
+    step_2_points_at_solve = page.eval_on_selector(
+        "#tourCallout", "el => el.style.display"
+    ) == "flex"
+
+    # A 3rd point to match _stub_osrm's 3x3 synthetic matrix above (the
+    # tour itself only cares that >= 2 points exist for this step).
+    page.evaluate("() => addPoint(12.91, 77.63)")
+
+    # Step 3: advances on a successful solve, pointing at the incident button.
+    page.click("#solveBtn")
+    page.wait_for_function("document.getElementById('stats').style.display === 'block'", timeout=10000)
+    page.wait_for_function("document.getElementById('tourStepLabel').textContent === 'Step 3 of 3'", timeout=5000)
+    step_3_text = page.inner_text("#tourText")
+
+    # Dismissing persists, so a reload never shows it again.
+    page.click("#tourDismiss")
+    dismissed_key = page.evaluate("localStorage.getItem('routerTourDismissed')")
+
+    page.close()
+    assert still_step_1
+    assert step_2_points_at_solve
+    assert "Simulate incident" in step_3_text
+    assert dismissed_key == "1"
+
+
+def test_first_run_tour_never_reappears_once_dismissed(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _allow_tour(page)
+    _stub_map_tiles(page)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.wait_for_selector("#tourCallout.visible", timeout=5000)
+
+    page.click("#tourDismiss")
+    page.reload(wait_until="networkidle")
+    # Give any (incorrect) re-trigger a moment to show up before asserting absence.
+    page.wait_for_timeout(300)
+    tour_visible_after_reload = page.eval_on_selector(
+        "#tourCallout", "el => el.classList.contains('visible')"
+    )
+
+    page.close()
+    assert tour_visible_after_reload is False
+
+
+def test_first_run_tour_skips_a_visitor_who_already_has_state(live_server, browser):
+    """A shared link (or any other path that arrives with points already on
+    the map) is not a first-time visit — showing "click anywhere to start"
+    to someone who already has a route loaded would be actively wrong."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _allow_tour(page)
+    _stub_map_tiles(page)
+    state = {
+        "c": "Bengaluru", "m": "quantum", "h": "now", "v": "1", "cap": None, "cm": "count",
+        "p": [[12.97, 77.59], [12.93, 77.62]], "prec": [], "tw": {}, "w": {},
+    }
+    url = f"{live_server}/app?r={urllib.parse.quote(json.dumps(state))}"
+    page.goto(url, wait_until="networkidle", timeout=15000)
+    page.wait_for_function("clickedPoints.length === 2", timeout=5000)
+    page.wait_for_timeout(300)  # let a (incorrect) tour trigger have its chance before asserting absence
+
+    tour_visible = page.eval_on_selector("#tourCallout", "el => el.classList.contains('visible')")
+
+    page.close()
+    assert tour_visible is False
+
+
+# ---------- On-map constraint annotations (Wow #6) ----------
+# A dashed pink connector between an active precedence pair's pins, and a
+# small clock badge on any pin with a time-window rule — see
+# _redrawPrecedenceConnectors() and pinIcon() in click_router.html. Both
+# are purely visual (no new request/response shape), so these tests drive
+# the same internal functions the precedence/time-window panel tests above
+# use, then check the actual Leaflet layer / DOM state rather than any
+# network call.
+
+def test_precedence_rule_draws_a_dashed_connector_between_its_two_pins(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+
+    # 4 points -> 2 interior stops (indices 1, 2), the minimum the
+    # precedence form needs to offer two different stops.
+    page.evaluate("""
+        () => { addPoint(12.97, 77.59); addPoint(12.95, 77.60); addPoint(12.93, 77.61); addPoint(12.91, 77.62); }
+    """)
+    page.click("#optionsBtn")
+    page.click("#precedenceBtn")
+    page.select_option("#precUSelect", "1")
+    page.select_option("#precVSelect", "2")
+    page.click("#precAddBtn")
+
+    connector_count = page.evaluate("precedenceLayer.getLayers().length")
+    connector_style = page.evaluate("""
+        () => {
+            const layer = precedenceLayer.getLayers()[0];
+            return { color: layer.options.color, dashArray: layer.options.dashArray };
+        }
+    """)
+
+    # Removing the rule from the panel clears the connector.
+    page.click("#precedenceList button")
+    connector_count_after_remove = page.evaluate("precedenceLayer.getLayers().length")
+
+    page.close()
+    assert connector_count == 1
+    assert connector_style["color"] == "#ec4899"
+    assert connector_style["dashArray"]
+    assert connector_count_after_remove == 0
+
+
+def test_removing_a_pin_in_a_precedence_rule_clears_its_connector(live_server, browser):
+    """_removePrecedenceForRemovedIndex already drops any rule naming a
+    removed stop — this checks the on-map connector actually follows that,
+    not just the rule list."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+
+    page.evaluate("""
+        () => {
+            addPoint(12.97, 77.59); addPoint(12.95, 77.60); addPoint(12.93, 77.61); addPoint(12.91, 77.62);
+            precedenceRules.push([1, 2]);
+            _renderPrecedenceList();
+        }
+    """)
+    connector_count_before = page.evaluate("precedenceLayer.getLayers().length")
+
+    page.evaluate("() => removePoint(1)")  # removes one end of the rule
+    connector_count_after = page.evaluate("precedenceLayer.getLayers().length")
+
+    page.close()
+    assert connector_count_before == 1
+    assert connector_count_after == 0
+
+
+def test_time_window_rule_shows_a_clock_badge_on_its_pin(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+
+    page.evaluate("""
+        () => { addPoint(12.97, 77.59); addPoint(12.95, 77.60); addPoint(12.93, 77.61); }
+    """)
+    page.click("#optionsBtn")
+    page.click("#timeWindowsBtn")
+    page.select_option("#twStopSelect", "1")
+    page.fill("#twEarliestInput", "10")
+    page.fill("#twLatestInput", "40")
+    page.click("#twAddBtn")
+
+    badge_count = page.evaluate("document.querySelectorAll('.pin-tw-badge').length")
+    badge_tip = page.eval_on_selector(".pin-tw-badge", "el => el.title")
+
+    # Removing the rule takes the badge away again.
+    page.click("#timeWindowsList button")
+    badge_count_after_remove = page.evaluate("document.querySelectorAll('.pin-tw-badge').length")
+
+    page.close()
+    assert badge_count == 1
+    assert "10" in badge_tip and "40" in badge_tip
+    assert badge_count_after_remove == 0
+
+
+# ---------- Quantum vs. Classical Arena (Wow #1) ----------
+# compareMethods()'s "3, 2, 1, GO" countdown + simultaneous-draw race +
+# winner banner sequence only runs for a real visitor (gated behind
+# `!navigator.webdriver`, same technique the first-run tour uses) — so
+# these spoof navigator.webdriver back to `false` to exercise it, and
+# stub BOTH /api/solve responses directly (rather than relying on
+# whatever the real solver happens to return for a synthetic matrix) so
+# the "winner" is deterministic and the two draw-in durations are
+# reliably different.
+
+def _stub_solve_costs(page, quantum_cost, classical_cost):
+    """Fulfils /api/solve with a minimal-but-complete response shaped like
+    the real one (see app.py's /api/solve and tests/test_app.py), with a
+    fixed cost_minutes per method so the Arena's winner/margin is known in
+    advance instead of depending on whatever the real solver finds for a
+    made-up distance matrix."""
+    def handle(route, request):
+        import json as _json
+        body = _json.loads(request.post_data)
+        cost = quantum_cost if body["method"] == "quantum" else classical_cost
+        n = len(body["matrix"])
+        route.fulfill(json={
+            "order": list(range(n)),
+            "cost_minutes": cost,
+            "free_flow_minutes": cost * 0.7,
+            "naive_order_minutes": cost * 1.2,
+            "savings_vs_naive_pct": 15.0,
+            "solve_ms": 5,
+            "hour_simulated": 12.0,
+        })
+    page.route("**/api/solve", handle)
+
+
+def test_arena_shows_a_countdown_then_a_winner_banner_for_a_real_visitor(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => false });")
+    _stub_map_tiles(page)
+    _stub_osrm(page, 4)
+    _stub_solve_costs(page, quantum_cost=20.0, classical_cost=24.6)  # quantum wins by 4.6 min
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.evaluate("""
+        () => { addPoint(12.97, 77.59); addPoint(12.95, 77.60); addPoint(12.93, 77.61); addPoint(12.91, 77.62); }
+    """)
+    page.click("#optionsBtn")
+    page.click("#compareBtn")
+
+    # The countdown is real (the whole point), so catch it appearing at all.
+    page.wait_for_selector(".arena-countdown", timeout=3000)
+
+    # Then the live "Racing…" state with its ticking timer.
+    page.wait_for_selector(".arena-racing #arenaTimer", timeout=3000)
+
+    # And finally the winner banner, naming the actual margin.
+    page.wait_for_selector(".arena-banner", timeout=8000)
+    banner_text = page.inner_text(".arena-banner")
+    layer_count = page.evaluate("compareRouteLayer.getLayers().length")
+
+    page.close()
+    assert "Quantum-inspired won by 4.6 min" in banner_text
+    assert layer_count == 2
+
+
+def test_arena_shows_a_dead_heat_banner_when_costs_tie(live_server, browser):
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => false });")
+    _stub_map_tiles(page)
+    _stub_osrm(page, 4)
+    _stub_solve_costs(page, quantum_cost=22.0, classical_cost=22.0)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.evaluate("""
+        () => { addPoint(12.97, 77.59); addPoint(12.95, 77.60); addPoint(12.93, 77.61); addPoint(12.91, 77.62); }
+    """)
+    page.click("#optionsBtn")
+    page.click("#compareBtn")
+
+    page.wait_for_selector(".arena-banner", timeout=8000)
+    banner_text = page.inner_text(".arena-banner")
+    is_tie_styled = "tie" in (page.get_attribute(".arena-banner", "class") or "")
+
+    page.close()
+    assert "Dead heat" in banner_text
+    assert is_tie_styled
+
+
+def test_arena_sequence_is_skipped_under_automation_by_default(live_server, browser):
+    """Without the navigator.webdriver spoof, Playwright's own default
+    (navigator.webdriver === true) should make compareMethods() skip
+    straight past the countdown/race delay to the results — this is what
+    keeps every OTHER Compare-panel test in this file fast, so it's worth
+    asserting directly rather than only relying on their timeouts passing."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    _stub_osrm(page, 3)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.evaluate("() => { addPoint(12.97, 77.59); addPoint(12.93, 77.62); addPoint(12.91, 77.63); }")
+
+    page.click("#optionsBtn")
+    page.click("#compareBtn")
+    page.wait_for_function(
+        "document.getElementById('compareContent').textContent.includes('Drive time')", timeout=2000,
+    )
+    countdown_ever_shown = page.evaluate("!!document.querySelector('.arena-countdown')")
+
+    page.close()
+    assert countdown_ever_shown is False
+
+
+# ---------- Mobile pass (Week 4): slim topbar + drawer at 375px ----------
+# Two real bugs found while verifying the topbar/drawer one-handed at phone
+# width, both fixed alongside these tests:
+#  1. Every floating panel the Options drawer can launch (Precedence, Time
+#     windows, Import, My routes, Compare) rendered UNDER the drawer at its
+#     own <=480px "full width" breakpoint (#optionsDrawer's z-index sits
+#     above them) — invisible, not literally broken, but unreachable
+#     one-handed. Fixed by closing the drawer when any of those open at
+#     narrow width (_closeOptionsDrawerIfNarrow).
+#  2. Every centered floating panel's entrance animation (.panel-enter /
+#     @keyframes panelIn) used to animate `transform: translateY(...)`,
+#     the SAME CSS property the panel's own `left: 50%; transform:
+#     translateX(-50%)` centering rule uses — for the ~320ms animation,
+#     that replaced the centering entirely, so the panel rendered flush
+#     against its left edge (overflowing off-screen on a narrow phone)
+#     until the animation finished. Fixed by animating `margin-top`
+#     instead, which can never collide with any element's own transform.
+
+@pytest.mark.parametrize("panel_id,open_sequence", [
+    ("precedencePanel", ["#optionsBtn", "#precedenceBtn"]),
+    ("timeWindowsPanel", ["#optionsBtn", "#timeWindowsBtn"]),
+    ("importPanel", ["#optionsBtn", "#importBtn"]),
+    ("historyPanel", ["#optionsBtn", "#historyBtn"]),
+    ("comparePanel", ["#optionsBtn", "#compareBtn"]),
+])
+def test_options_drawer_closes_for_its_own_panels_at_phone_width(live_server, browser, panel_id, open_sequence):
+    page = browser.new_page(viewport={"width": 375, "height": 812})
+    _stub_map_tiles(page)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    # 4 points -> 2 interior stops, enough for every panel's form (Compare
+    # just needs >= 2 points; Precedence needs 2 interior stops to offer a
+    # real u/v pair).
+    page.evaluate("""
+        () => { addPoint(12.97, 77.59); addPoint(12.95, 77.60); addPoint(12.93, 77.61); addPoint(12.91, 77.62); }
+    """)
+
+    for selector in open_sequence:
+        page.click(selector)
+    page.wait_for_function(f"getComputedStyle(document.getElementById('{panel_id}')).display === 'flex'", timeout=3000)
+
+    drawer_display = page.eval_on_selector("#optionsDrawer", "el => getComputedStyle(el).display")
+    panel_rect = page.evaluate(f"""
+        () => {{ const r = document.getElementById('{panel_id}').getBoundingClientRect(); return {{left: r.left, right: r.right}}; }}
+    """)
+
+    page.close()
+    assert drawer_display == "none"
+    assert panel_rect["left"] >= 0
+    assert panel_rect["right"] <= 375
+
+
+def test_options_drawer_stays_open_for_its_own_panels_at_desktop_width(live_server, browser):
+    """The narrow-width fix must NOT change desktop behavior — the drawer
+    is a narrow right-side panel there, not a full-width overlay, so it
+    can and should stay open alongside a centered floating panel (a real
+    user might want to keep tweaking Method/Fleet/Hour while a panel is
+    open)."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.evaluate("() => { addPoint(12.97, 77.59); addPoint(12.95, 77.60); addPoint(12.93, 77.61); addPoint(12.91, 77.62); }")
+
+    page.click("#optionsBtn")
+    page.click("#precedenceBtn")
+    page.wait_for_function("getComputedStyle(document.getElementById('precedencePanel')).display === 'flex'", timeout=3000)
+    drawer_display = page.eval_on_selector("#optionsDrawer", "el => getComputedStyle(el).display")
+
+    page.close()
+    assert drawer_display == "flex"
+
+
+@pytest.mark.parametrize("panel_id,open_sequence", [
+    ("precedencePanel", ["#optionsBtn", "#precedenceBtn"]),
+    ("timeWindowsPanel", ["#optionsBtn", "#timeWindowsBtn"]),
+    ("importPanel", ["#optionsBtn", "#importBtn"]),
+    ("historyPanel", ["#optionsBtn", "#historyBtn"]),
+])
+def test_centered_panels_stay_within_viewport_during_their_entrance_animation(live_server, browser, panel_id, open_sequence):
+    """Regression test for the transform-collision bug above: check the
+    panel's actual bounding box WHILE its 0.32s entrance animation is
+    still running (not after it settles), since that's exactly when the
+    bug showed up — the panel was fine before and after the animation,
+    only wrong during it."""
+    page = browser.new_page(viewport={"width": 375, "height": 812})
+    _stub_map_tiles(page)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.evaluate("""
+        () => { addPoint(12.97, 77.59); addPoint(12.95, 77.60); addPoint(12.93, 77.61); addPoint(12.91, 77.62); }
+    """)
+
+    for selector in open_sequence:
+        page.click(selector)
+    page.wait_for_function(f"getComputedStyle(document.getElementById('{panel_id}')).display === 'flex'", timeout=3000)
+    page.wait_for_timeout(60)  # well inside the 320ms animation — the worst moment for the old bug
+    rect = page.evaluate(f"""
+        () => {{ const r = document.getElementById('{panel_id}').getBoundingClientRect(); return {{left: r.left, right: r.right}}; }}
+    """)
+
+    page.close()
+    assert rect["left"] >= 0
+    assert rect["right"] <= 375
+
+
+def test_insights_dashboard_is_reachable_from_the_drawer_below_860px(live_server, browser):
+    """statsStripBtn (the always-visible pill that normally opens the
+    Insights dashboard) hides below 860px width to keep the topbar from
+    overflowing — which used to leave the dashboard completely
+    unreachable on anything narrower than that. drawerInsightsBtn is the
+    fallback entry point inside the Options drawer."""
+    page = browser.new_page(viewport={"width": 375, "height": 812})
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+
+    stats_strip_hidden = page.eval_on_selector("#statsStripBtn", "el => getComputedStyle(el).display") == "none"
+
+    page.click("#optionsBtn")
+    page.click("#drawerInsightsBtn")
+    page.wait_for_function("getComputedStyle(document.getElementById('insightsPanel')).display === 'flex'", timeout=3000)
+    drawer_display = page.eval_on_selector("#optionsDrawer", "el => getComputedStyle(el).display")
+    panel_rect = page.evaluate(
+        "() => { const r = document.getElementById('insightsPanel').getBoundingClientRect(); return {left: r.left, right: r.right}; }"
+    )
+
+    page.close()
+    assert stats_strip_hidden  # confirms this test is actually exercising the narrow-width gap
+    assert drawer_display == "none"
+    assert panel_rect["left"] >= 0
+    assert panel_rect["right"] <= 375

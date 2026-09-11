@@ -24,6 +24,45 @@ servers:
       take 30-50 seconds)
 
 paths:
+  /api/insights:
+    get:
+      summary: The benchmark CSVs in output/ (see src/benchmark.py), served as JSON
+      description: >
+        No auth, no request body, no new computation — every number here
+        already exists in a committed CSV file; this endpoint just makes
+        it reachable by the frontend's Insights dashboard. Returns one
+        key per experiment (experiment_1 .. experiment_6), each a list of
+        row objects with the exact same fields as that experiment's CSV
+        columns, numeric/boolean strings converted to real JSON types. A
+        key comes back as an empty list, not an error, if that CSV
+        doesn't exist yet (main.py hasn't been run in this checkout).
+      responses:
+        '200':
+          description: Raw benchmark rows, one array per experiment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightsResponse'
+
+  /api/capabilities:
+    get:
+      summary: Whether optional solver capabilities (currently just real QPU access) actually work here
+      description: >
+        No auth, no request body. Lets the frontend disable/badge an
+        option upfront (see the method dropdown's "Needs setup" badge on
+        method="qpu") instead of offering it and only surfacing the
+        failure after the user picks it. `configured` is a cheap,
+        zero-network proxy (installed + an env var set), not a live
+        connectivity/validity check — see CapabilitiesResponse and
+        src/qpu_solver.py / docs/quantum-hardware.md for the honest scope.
+      responses:
+        '200':
+          description: Current capability flags
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilitiesResponse'
+
   /api/analytics:
     get:
       summary: A live, aggregate usage counter for this running process
@@ -583,7 +622,11 @@ components:
       properties:
         since:
           type: string
-          description: UTC timestamp this process started, ISO 8601.
+          description: >
+            UTC timestamp counters started being tracked, ISO 8601. Persisted
+            (see src/analytics.py) — stays the same across a plain process
+            restart, only resets on a fresh deploy (a new disk) or if the
+            backing SQLite file is otherwise cleared.
         uptime_seconds:
           type: number
         total_solves:
@@ -619,6 +662,50 @@ components:
         note:
           type: string
           description: The honest-scope caveat — always present (see src/analytics.py).
+
+    InsightsResponse:
+      type: object
+      description: >
+        One key per experiment; each value is a list of that experiment's
+        raw CSV rows (arbitrary fields — see output/*.csv's own headers
+        and docs/benchmarks.md for what each column means).
+      properties:
+        experiment_1:
+          type: array
+          items: { type: object }
+        experiment_2:
+          type: array
+          items: { type: object }
+        experiment_3:
+          type: array
+          items: { type: object }
+        experiment_4:
+          type: array
+          items: { type: object }
+        experiment_5:
+          type: array
+          items: { type: object }
+        experiment_6:
+          type: array
+          items: { type: object }
+
+    CapabilitiesResponse:
+      type: object
+      properties:
+        qpu:
+          type: object
+          properties:
+            installed:
+              type: boolean
+              description: dwave-system is importable on this server.
+            configured:
+              type: boolean
+              description: >
+                installed AND DWAVE_API_TOKEN is set in this process's
+                environment. A cheap proxy, not a live check — see
+                src/qpu_solver.py's honest scope.
+            note:
+              type: string
 
     ErrorResponse:
       type: object

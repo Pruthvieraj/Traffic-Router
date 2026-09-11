@@ -16,10 +16,49 @@ def client():
     return app_module.app.test_client()
 
 
-def test_index_loads(client):
-    resp = client.get("/")
+def test_live_app_loads(client):
+    """The interactive click-router UI now lives at /app (Major #4: landing
+    page moved to / and the live app moved down a level — see test_landing_*
+    below for the new root route)."""
+    resp = client.get("/app")
     assert resp.status_code == 200
     assert b"Click-Anywhere Route Optimizer" in resp.data
+
+
+def test_live_app_includes_the_product_audit_ui_additions(client):
+    """Cheap smoke check that the new UI pieces actually rendered into the
+    page (not a behavior test — tests/test_layout.py covers that) — this
+    just catches a template typo/removed id before a browser test would."""
+    html = client.get("/app").data.decode()
+    for element_id in (
+        "statsStripBtn", "exampleRouteBtn", "qpuOption", "insightsPanel", "insightsCharts",
+        "optionsBtn", "optionsDrawer", "historyBtn", "historyPanel", "historyList",
+        "drawerInsightsBtn",
+    ):
+        assert f'id="{element_id}"' in html, f"missing #{element_id} in the rendered page"
+
+
+def test_landing_page_loads_at_root(client):
+    """/ now serves the unified landing page (Major #4 from the product
+    audit) rather than the live app directly — it links out to /app and
+    /demo instead of embedding the map."""
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert b"QubitRoute" in resp.data
+    assert b'href="/app"' in resp.data
+    assert b'href="/demo"' in resp.data
+    # The landing page is a lightweight marketing/onboarding page, not the
+    # map UI itself — it should NOT contain the live app's markup.
+    assert b"Click-Anywhere Route Optimizer" not in resp.data
+
+
+def test_demo_route_serves_the_static_flagship_map(client):
+    """/demo serves the prebuilt multi-city static demo (output/multi_city_map.html,
+    falling back to the repo-root index.html) — either way it should be the
+    same self-contained file the audit's "instant demo" card links to."""
+    resp = client.get("/demo")
+    assert resp.status_code == 200
+    assert b"Quantum-Inspired Route Optimizer" in resp.data
 
 
 def test_solve_valid_classical(client):
@@ -588,6 +627,64 @@ def test_solve_fleet_rejects_malformed_incident_pairs(client):
         "matrix": matrix, "method": "classical", "n_vehicles": 2, "incident_pairs": [[0]],
     })
     assert resp.status_code == 400
+
+
+# ---------- /api/capabilities ----------
+
+def test_capabilities_reports_qpu_not_configured_without_a_token(client, monkeypatch):
+    monkeypatch.delenv("DWAVE_API_TOKEN", raising=False)
+    resp = client.get("/api/capabilities")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "qpu" in data
+    assert data["qpu"]["configured"] is False
+    assert isinstance(data["qpu"]["installed"], bool)
+    assert "note" in data["qpu"]
+
+
+def test_capabilities_configured_requires_both_installed_and_token(client, monkeypatch):
+    """configured can only be True if BOTH installed is True AND the token
+    env var is set — setting just the token with dwave-system NOT
+    installed (this sandbox's real state) must still report False, since
+    a token with no client library to use it isn't actually usable."""
+    monkeypatch.setenv("DWAVE_API_TOKEN", "fake-token-for-test")
+    resp = client.get("/api/capabilities")
+    data = resp.get_json()
+    if not data["qpu"]["installed"]:
+        assert data["qpu"]["configured"] is False
+    else:
+        assert data["qpu"]["configured"] is True
+
+
+# ---------- /api/insights ----------
+
+def test_insights_returns_all_six_experiment_keys(client):
+    resp = client.get("/api/insights")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    for i in range(1, 7):
+        assert f"experiment_{i}" in data
+        assert isinstance(data[f"experiment_{i}"], list)
+
+
+def test_insights_coerces_numbers_and_booleans_out_of_csv_strings(client):
+    data = client.get("/api/insights").get_json()
+    rows = data["experiment_2"]
+    if not rows:
+        pytest.skip("output/experiment_2_constrained.csv doesn't exist in this checkout")
+    row = rows[0]
+    assert isinstance(row["n_waypoints"], int)
+    assert isinstance(row["qubo_sa_cost_min"], float)
+    assert isinstance(row["qubo_sa_satisfies_rule"], bool)
+    assert isinstance(row["precedence_rule"], str)  # e.g. "Indiranagar before MG Road" — stays a string
+
+
+def test_insights_missing_csv_returns_empty_list_not_an_error(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "_OUTPUT_DIR", str(tmp_path))  # a directory with no CSVs in it
+    resp = client.get("/api/insights")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["experiment_1"] == []
 
 
 # ---------- /api/analytics ----------
