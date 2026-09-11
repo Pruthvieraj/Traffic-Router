@@ -406,6 +406,26 @@
   #optionsBadge[hidden] { display: none; }
   @media (max-width: 480px) { #optionsDrawer { width: 100%; max-width: 100%; } }
 
+  /* Give #directions / #liveFeed / #statsStripBtn their own place when
+     the Options drawer is open, instead of sitting in the same pixels
+     the drawer's higher z-index would otherwise bury them under (see
+     _openOptionsDrawer/_closeOptionsDrawer's own comment above for the
+     full story). Shifting left of the drawer, not hiding or closing
+     anything — a solved route's directions and a running live-reopt
+     feed (whose own Stop button lives INSIDE this drawer) both stay
+     fully visible and fully usable with the drawer open. Only above the
+     861px breakpoint where all three are still right-anchored at all
+     (#statsStripBtn hides and #directions becomes a bottom banner below
+     860px anyway — see each one's own responsive rule — so there's
+     nothing to shift down there). */
+  @media (min-width: 861px) {
+    body.options-drawer-open #directions,
+    body.options-drawer-open #liveFeed,
+    body.options-drawer-open #statsStripBtn {
+      right: calc(300px + 18px + 14px);
+    }
+  }
+
   /* ---------- Floating glass panels ---------- */
   #hint, #stats, #directions {
     background: var(--panel-bg); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
@@ -431,7 +451,7 @@
      it's meant to be glanced at, not interacted with much (its one real
      interaction — opening the fuller Insights dashboard — is secondary). */
   #statsStripBtn {
-    position: absolute; top: 16px; right: 18px; z-index: 600;
+    position: absolute; top: 16px; right: 18px; z-index: 600; transition: right 0.2s ease;
     background: var(--panel-bg); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
     border: 1px solid var(--panel-border); box-shadow: var(--shadow); border-radius: var(--radius);
     padding: 8px 14px; font-family: inherit; font-size: 12px; font-weight: 600; color: var(--ink-soft);
@@ -520,7 +540,7 @@
 
   #directions {
     position: absolute; top: 16px; right: 18px; bottom: 18px; width: 300px; max-height: calc(100% - 34px);
-    z-index: 500; display: none; overflow: hidden; flex-direction: column;
+    z-index: 500; display: none; overflow: hidden; flex-direction: column; transition: right 0.2s ease;
   }
   #directions-header {
     flex: 0 0 auto; padding: 12px 16px; font-size: 13px; font-weight: 700; color: var(--ink);
@@ -553,7 +573,7 @@
 
   /* ---------- Live re-optimization demo feed ---------- */
   #liveFeed {
-    position: absolute; right: 18px; bottom: 18px; width: 280px; max-height: 240px;
+    position: absolute; right: 18px; bottom: 18px; width: 280px; max-height: 240px; transition: right 0.2s ease;
     z-index: 500; display: none; flex-direction: column; overflow: hidden;
     background: var(--panel-bg); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
     border: 1px solid var(--panel-border); box-shadow: var(--shadow); border-radius: var(--radius);
@@ -1708,31 +1728,53 @@ document.getElementById('exampleRouteBtn').addEventListener('click', async () =>
 // re-optimize) keeps its original id and its original click handler —
 // this only toggles the drawer's own visibility, following the same
 // display:'flex'/'none' convention as every other floating panel here.
+//
+// Right-corner conflict, found from a live-demo screenshot: the
+// turn-by-turn Directions panel, the Live re-optimization feed, and the
+// always-visible stats-strip pill all anchor to the same right edge of
+// the map the drawer does (see each one's own CSS above), and the
+// drawer's z-index (850) is the highest of the four — so opening it used
+// to just visually bury whichever of the other three happened to be
+// showing, in the exact same pixels (the stats pill sitting half-cut
+// under the drawer's left edge). Closing or hiding any of them while the
+// drawer is open isn't the right fix either — the Live re-optimize
+// panel's own Stop button lives INSIDE this drawer, so a user needs the
+// drawer open and reachable at the same time the feed is running. So
+// instead the ".options-drawer-open" class below (toggled on <body>,
+// see #directions/#liveFeed/#statsStripBtn's own CSS for the matching
+// rule) just SHIFTS those three left of the drawer while it's open —
+// nothing closes, nothing hides, nothing loses functionality, each one
+// simply gets its own place instead of overlapping the drawer's.
 function _openOptionsDrawer() {
   const drawer = document.getElementById('optionsDrawer');
   const btn = document.getElementById('optionsBtn');
   drawer.style.display = 'flex';
   btn.setAttribute('aria-expanded', 'true');
+  document.body.classList.add('options-drawer-open');
 }
 function _closeOptionsDrawer() {
   const drawer = document.getElementById('optionsDrawer');
   const btn = document.getElementById('optionsBtn');
   drawer.style.display = 'none';
   btn.setAttribute('aria-expanded', 'false');
+  document.body.classList.remove('options-drawer-open');
 }
 // Mobile pass finding: at the drawer's own <=480px "full width" breakpoint
 // (see #optionsDrawer's CSS above), the drawer's z-index (850) sits above
-// every floating panel it can launch (Precedence, Time windows, Import,
-// My routes, Compare, Live re-optimize's feed — all 500-800), so opening
-// one from inside the drawer at phone width made it appear UNDER the
-// still-open drawer — invisible, not actually broken, just impossible to
-// see or reach one-handed. At wider widths the drawer is a narrow
-// right-side panel that already coexists fine with a centered floating
-// panel (unaffected, left as-is). Called at the start of each such
-// button's own handler, not baked into a generic "any drawer click
-// closes it" listener, since most of the drawer's own controls (Method,
-// Fleet, Hour, basemap, precedence/time-window BADGES) are meant to stay
-// usable with the drawer still open.
+// every CENTERED floating panel it can launch too (Precedence, Time
+// windows, Import, My routes, Compare, Live re-optimize's feed — all
+// 500-800), so opening one from inside the drawer at phone width made it
+// appear UNDER the still-open drawer — invisible, not actually broken,
+// just impossible to see or reach one-handed. At wider widths the drawer
+// is a narrow right-side panel that already coexists fine with a
+// centered floating panel (unaffected, left as-is); the right-corner
+// panels above get their own ".options-drawer-open" shift instead
+// (unconditional, not just below this breakpoint — that's a genuinely
+// different fix for a genuinely different conflict). Called at the
+// start of each such button's own handler, not baked into a generic
+// "any drawer click closes it" listener, since most of the drawer's own
+// controls (Method, Fleet, Hour, basemap, precedence/time-window
+// BADGES) are meant to stay usable with the drawer still open.
 function _closeOptionsDrawerIfNarrow() {
   if (window.innerWidth <= 480) _closeOptionsDrawer();
 }

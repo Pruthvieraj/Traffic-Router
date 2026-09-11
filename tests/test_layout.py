@@ -1936,6 +1936,52 @@ def test_options_drawer_stays_open_for_its_own_panels_at_desktop_width(live_serv
     assert drawer_display == "flex"
 
 
+def test_options_drawer_no_longer_overlaps_the_right_corner_panels(live_server, browser):
+    """Regression test for a live-demo screenshot: the always-visible
+    stats-strip pill (top-right) sat half-cut under the Options drawer's
+    left edge once the drawer opened, because both anchor to the same
+    right edge and the drawer's z-index is higher. The fix shifts
+    #statsStripBtn/#directions/#liveFeed left of the drawer instead of
+    closing or hiding any of them (closing was tried and rejected: the
+    Live re-optimize panel's own Stop button lives INSIDE the drawer, so
+    it must stay open and reachable while that panel runs) — checked here
+    both ways: the stats pill's bounding box must never intersect the
+    open drawer's, and it must go back to its original position once the
+    drawer closes."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+
+    closed_box = page.eval_on_selector(
+        "#statsStripBtn", "el => { const r = el.getBoundingClientRect(); return {left: r.left, right: r.right}; }"
+    )
+
+    page.click("#optionsBtn")
+    page.wait_for_function("getComputedStyle(document.getElementById('optionsDrawer')).display === 'flex'", timeout=3000)
+    # the CSS transition on `right` needs a moment to settle before reading boxes
+    page.wait_for_timeout(300)
+
+    stats_box = page.eval_on_selector(
+        "#statsStripBtn", "el => { const r = el.getBoundingClientRect(); return {left: r.left, right: r.right}; }"
+    )
+    drawer_box = page.eval_on_selector(
+        "#optionsDrawer", "el => { const r = el.getBoundingClientRect(); return {left: r.left, right: r.right}; }"
+    )
+
+    page.click("#optionsClose")
+    page.wait_for_function("getComputedStyle(document.getElementById('optionsDrawer')).display === 'none'", timeout=3000)
+    page.wait_for_timeout(300)
+    reopened_box = page.eval_on_selector(
+        "#statsStripBtn", "el => { const r = el.getBoundingClientRect(); return {left: r.left, right: r.right}; }"
+    )
+
+    page.close()
+
+    assert stats_box["right"] <= drawer_box["left"], "stats pill must not overlap the open drawer"
+    assert stats_box["left"] < closed_box["left"], "the pill should have shifted left while the drawer was open"
+    assert reopened_box == closed_box, "closing the drawer must restore the pill's original position exactly"
+
+
 @pytest.mark.parametrize("panel_id,open_sequence", [
     ("precedencePanel", ["#optionsBtn", "#precedenceBtn"]),
     ("timeWindowsPanel", ["#optionsBtn", "#timeWindowsBtn"]),

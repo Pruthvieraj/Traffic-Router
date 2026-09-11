@@ -15,7 +15,7 @@ pip install pytest
 pytest tests/ -v
 ```
 
-**420 Python tests** (509 total including the layout suite below, plus a
+**421 Python tests** (510 total including the layout suite below, plus a
 separate 14-test Node.js frontend suite — see below), covering the QUBO
 solver, the classical baselines, the multi-objective time/distance
 trade-off (`combine_objectives`, real-vs-cosmetic-objective checks), route
@@ -100,7 +100,7 @@ runner, no npm install):
 node --test tests/frontend/*.test.js
 ```
 
-**And a 75-test real-browser layout suite** (`tests/test_layout.py`),
+**And a 76-test real-browser layout suite** (`tests/test_layout.py`),
 added after a real bug shipped through a fully green test suite and
 several rounds of manual screenshots: the topbar had a fixed height
 combined with `flex-wrap`, so on a narrower browser window its second row
@@ -163,7 +163,15 @@ pass at 375px width (the Options drawer closing for its own launched
 panels only at that width, every centered panel's entrance animation
 never overflowing the viewport, and the Insights dashboard staying
 reachable through the drawer specifically when its normal topbar entry
-point hides).
+point hides); and a real desktop-width bug a live-demo screenshot caught
+that no test had covered before: the always-visible stats-strip pill,
+the turn-by-turn Directions panel, and the Live re-optimization feed all
+anchor to the same right edge of the map the Options drawer does, and
+the drawer's higher z-index just buried whichever one happened to be
+showing once it opened — fixed by shifting all three left of the open
+drawer (never closing or hiding any of them, since Live re-optimize's own
+Stop button lives inside the drawer and has to stay reachable while that
+feed runs), locked in by `test_options_drawer_no_longer_overlaps_the_right_corner_panels`.
 
 All three suites run automatically on every push via
 `.github/workflows/tests.yml` — that's the badge at the top of this

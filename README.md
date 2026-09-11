@@ -112,7 +112,7 @@ honest scope: [`docs/features.md`](docs/features.md).
 pip install pytest
 pytest tests/ -v
 ```
-**420 Python tests, 509 total** including a 75-test real-browser Playwright
+**421 Python tests, 510 total** including a 76-test real-browser Playwright
 layout suite (`pytest tests/test_layout.py -v`, needs
 `pip install playwright && playwright install --with-deps chromium`),
 plus a separate **14-test Node.js frontend suite**
@@ -188,7 +188,7 @@ README so it stays a quick pitch + quick-start, not a whitepaper:
 - [`docs/benchmarks.md`](docs/benchmarks.md) — all 5 experiments in full, with exact numbers
 - [`docs/features.md`](docs/features.md) — route explainability, time-window constraints
 - [`docs/quantum-hardware.md`](docs/quantum-hardware.md) — real D-Wave QPU setup + QAOA
-- [`docs/testing.md`](docs/testing.md) — what the 509 tests actually cover
+- [`docs/testing.md`](docs/testing.md) — what the 510 tests actually cover
 - [`docs/deploy.md`](docs/deploy.md) — GitHub Pages and Render deployment steps
 - [`docs/pitching.md`](docs/pitching.md) — pitch deck generation, judging talking points, roadmap
 - [`docs/patent-note.md`](docs/patent-note.md) — the full patent-scope note
