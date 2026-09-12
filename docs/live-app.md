@@ -686,3 +686,67 @@ concession, the prior-art overlap, "why not QPSO," the OR-Tools
 comparison, and 21 others — is rehearsed with a fact-checked answer in
 [`docs/JUDGE_PREP.md`](JUDGE_PREP.md).
 
+## The frontend/UX audit pass
+
+A dedicated frontend/UX audit (implementation-level: read the actual CSS/
+HTML/JS, ran `app.py` live with Playwright) scored the product 6/10,
+correctly separating real gaps from things it evaluated on a stale
+snapshot. Several of its "missing" findings — the Options drawer, the
+capability-aware method selector, on-map precedence/time-window
+annotations, the Insights dashboard, the Quantum vs. Classical Arena, the
+confirm-before-Clear flow, the stacked toast queue, and the friendly
+network-failure messaging — already existed locally by the time this
+review was read; each is covered by its own section above. Its two
+genuinely new, highest-leverage findings, and the smaller ones bundled
+alongside them, were closed in this pass:
+
+**Design-token consolidation.** The single highest-leverage finding,
+verified directly in the CSS: `output/multi_city_map.html` ran a
+completely separate, unrelated 2015-era flat-UI palette
+(`#2c3e50`/`#e74c3c`/`#f39c12`/`#9b59b6`/`#3388ff`) sharing zero tokens
+with `templates/click_router.html`'s indigo/violet/cyan system — a judge
+opening both screens in the same five minutes would reasonably wonder if
+they were the same team's work. `src/build_multi_city_map.py`'s
+`HTML_TEMPLATE` now ports the live app's actual `--accent-1/2/cyan` and
+`--success/--warn/--danger` tokens and prefers the same `'Inter'`
+typeface — without adding a Google Fonts network request, since this
+file's whole design point is working from one double-clicked, offline
+file (see its own module docstring). Separately, `click_router.html`'s
+own 15 ad-hoc font-size values and 10 ad-hoc border-radius values (no
+shared scale — every component author picked their own number) collapsed
+into 7 `--fs-*` and 3 `--radius-*` tokens, each existing value mapped to
+the numerically nearest token so nothing visibly grew or shrank by more
+than ~2px anywhere — confirmed by the full layout suite passing unchanged
+plus a manual screenshot pass.
+
+**Accessibility.** `--muted`'s light-theme value computed to ~2.4:1
+against the page background — well under the 4.5:1 WCAG AA minimum for
+body text (computed, not eyeballed) — and is now `#566878` at ~5:1+. A
+global `:focus-visible` outline now covers every interactive element that
+had no custom focus treatment of its own. Every topbar/panel `<select>`
+now has an `aria-label`. The `#error`/`#notice` toasts now carry
+`role="alert"`/`role="status"` with matching `aria-live`. Every panel-close
+button is a real 32×32px hit target; the tighter list-row remove buttons
+(precedence/time-window rules, route history) got 24×24px, meeting WCAG
+2.2's own 2.5.8 minimum without visually dominating a compact row.
+
+**Cross-links and the route explanation.** The live app and the static
+demo previously linked to each other nowhere at all outside one
+conditional case (the network-failure banner). Both directions are now
+persistent: a one-line explainer strip on the static demo, a footer link
+at the bottom of the Options drawer on the live app. Separately, the
+"why this route" bottleneck-leg summary — previously the first line
+inside a collapsed toggle positioned down by the GPX export button — is
+now an always-visible one-line summary directly under the hero drive-time
+number, with the toggle (now labeled "Full breakdown") still available in
+its original spot for the full per-leg/precedence/time-window detail.
+
+Not done in this pass, and why: the Compare panel is already a real
+`display:grid` layout with defined columns and a header row — visually
+tabular already, just not a literal `<table>` element — so converting the
+markup was judged not worth the risk for a purely cosmetic-parity gain.
+A true `≤480px` bottom-sheet mobile redesign, a congestion heatmap
+overlay, and a scripted "try it yourself" guided overlay are all real,
+named P2/P3 items in the audit that would each need their own dedicated
+pass rather than being folded into this one.
+
