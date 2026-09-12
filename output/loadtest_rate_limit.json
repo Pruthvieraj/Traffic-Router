@@ -1,0 +1,7 @@
+{
+  "mode": "rate-limit",
+  "burst": 30,
+  "n_200": 20,
+  "n_429": 10,
+  "n_other": 0
+}

@@ -1,0 +1,48 @@
+{
+  "mode": "capacity",
+  "endpoint": "/api/solve",
+  "stops": 8,
+  "method": "classical",
+  "levels": [
+    {
+      "concurrency": 1,
+      "n_requests": 30,
+      "n_ok": 30,
+      "p50_ms": 1.9448804999910863,
+      "p95_ms": 2.730200299947681,
+      "p99_ms": 3.2904555400841677,
+      "throughput_req_per_s": 478.94773267457595,
+      "wall_seconds": 0.06263731499984715
+    },
+    {
+      "concurrency": 5,
+      "n_requests": 30,
+      "n_ok": 30,
+      "p50_ms": 7.281320000060987,
+      "p95_ms": 8.349679650007145,
+      "p99_ms": 8.994527859904338,
+      "throughput_req_per_s": 619.6310518415955,
+      "wall_seconds": 0.04841590800015183
+    },
+    {
+      "concurrency": 10,
+      "n_requests": 30,
+      "n_ok": 30,
+      "p50_ms": 13.383234000116317,
+      "p95_ms": 16.55184589993723,
+      "p99_ms": 17.216165620006905,
+      "throughput_req_per_s": 620.9990326069382,
+      "wall_seconds": 0.04830925400005981
+    },
+    {
+      "concurrency": 20,
+      "n_requests": 30,
+      "n_ok": 30,
+      "p50_ms": 20.731899499992323,
+      "p95_ms": 28.107699150041295,
+      "p99_ms": 29.687598850016457,
+      "throughput_req_per_s": 555.9216814558421,
+      "wall_seconds": 0.0539644360001148
+    }
+  ]
+}

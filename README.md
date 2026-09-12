@@ -112,11 +112,11 @@ honest scope: [`docs/features.md`](docs/features.md).
 pip install pytest
 pytest tests/ -v
 ```
-**421 Python tests, 510 total** including a 76-test real-browser Playwright
+**430 Python tests, 509 total** including a 79-test real-browser Playwright
 layout suite (`pytest tests/test_layout.py -v`, needs
 `pip install playwright && playwright install --with-deps chromium`),
 plus a separate **14-test Node.js frontend suite**
-(`node --test tests/frontend/*.test.js`). All three run automatically on
+(`node --test tests/frontend/*.test.js`) — **523 tests in total**. All three run automatically on
 every push via `.github/workflows/tests.yml` — that's the badge at the
 top of this README. Full breakdown of what's covered (including two real
 bugs the layout suite caught during development that no logic-only test
@@ -188,7 +188,8 @@ README so it stays a quick pitch + quick-start, not a whitepaper:
 - [`docs/benchmarks.md`](docs/benchmarks.md) — all 5 experiments in full, with exact numbers
 - [`docs/features.md`](docs/features.md) — route explainability, time-window constraints
 - [`docs/quantum-hardware.md`](docs/quantum-hardware.md) — real D-Wave QPU setup + QAOA
-- [`docs/testing.md`](docs/testing.md) — what the 510 tests actually cover
+- [`docs/testing.md`](docs/testing.md) — what the 523 tests actually cover
 - [`docs/deploy.md`](docs/deploy.md) — GitHub Pages and Render deployment steps
 - [`docs/pitching.md`](docs/pitching.md) — pitch deck generation, judging talking points, roadmap
 - [`docs/patent-note.md`](docs/patent-note.md) — the full patent-scope note
+- [`docs/JUDGE_PREP.md`](docs/JUDGE_PREP.md) — 25 hardest Round-2 judge questions, rehearsed

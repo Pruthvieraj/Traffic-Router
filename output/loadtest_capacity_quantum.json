@@ -1,0 +1,48 @@
+{
+  "mode": "capacity",
+  "endpoint": "/api/solve",
+  "stops": 8,
+  "method": "quantum",
+  "levels": [
+    {
+      "concurrency": 1,
+      "n_requests": 30,
+      "n_ok": 30,
+      "p50_ms": 166.83383099996263,
+      "p95_ms": 192.48857735002503,
+      "p99_ms": 198.58961720000252,
+      "throughput_req_per_s": 5.960781004424408,
+      "wall_seconds": 5.032897531000117
+    },
+    {
+      "concurrency": 5,
+      "n_requests": 30,
+      "n_ok": 30,
+      "p50_ms": 756.9146370000226,
+      "p95_ms": 792.737316650016,
+      "p99_ms": 795.1260273699495,
+      "throughput_req_per_s": 6.532551003648087,
+      "wall_seconds": 4.592386647000012
+    },
+    {
+      "concurrency": 10,
+      "n_requests": 30,
+      "n_ok": 30,
+      "p50_ms": 1528.4281819999705,
+      "p95_ms": 1578.1887694500142,
+      "p99_ms": 1589.4967907699515,
+      "throughput_req_per_s": 6.460152210273305,
+      "wall_seconds": 4.643853430000036
+    },
+    {
+      "concurrency": 20,
+      "n_requests": 30,
+      "n_ok": 30,
+      "p50_ms": 2530.027265499939,
+      "p95_ms": 3261.6947466500733,
+      "p99_ms": 3271.5151102800382,
+      "throughput_req_per_s": 6.122409516289243,
+      "wall_seconds": 4.900031584000089
+    }
+  ]
+}
