@@ -72,7 +72,20 @@ app = Flask(__name__)
 # limiting, not a crash) if flask-limiter somehow isn't installed,
 # consistent with this project's general rule that a missing optional
 # dependency should never take the whole app down.
-_TESTING = "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
+#
+# DISABLE_RATE_LIMIT_FOR_LOADTEST=1 is a third, explicit opt-in for
+# loadtest.py's "capacity" mode: measuring this single gunicorn worker's
+# real concurrent-request throughput requires firing more than 20
+# requests/minute from one machine on purpose, which is exactly what the
+# rate limiter exists to stop from a real visitor. It's a separate,
+# clearly-named flag rather than reusing the pytest checks above so that
+# accidentally running a load test never gets confused with "tests are
+# running" in a log, and vice versa.
+_TESTING = (
+    "pytest" in sys.modules
+    or "PYTEST_CURRENT_TEST" in os.environ
+    or os.environ.get("DISABLE_RATE_LIMIT_FOR_LOADTEST") == "1"
+)
 _limiter = None
 if not _TESTING:
     try:

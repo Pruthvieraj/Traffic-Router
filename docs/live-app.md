@@ -648,3 +648,41 @@ currently invisible" finding — having no way to open it at all below
 860px width once its one entry point hid itself there. All three are
 fixed and covered by dedicated tests (see `docs/testing.md`).
 
+## The second judge-review pass
+
+A second, independent judge-panel review scored a Round-2 readiness of
+6.5/10 after actually running `app.py` in a network-restricted sandbox —
+the exact kind of live check the first product audit above didn't do. Two
+of its findings were about the *deployed* repo lagging behind local,
+unpushed work (a capability-aware method selector and an in-app Insights
+view already existed locally — see the two sections above — before this
+review was even written); the rest were genuine, and closed in this pass:
+
+A live demo screenshot from that review showed the map going blank with a
+raw `Failed to fetch` toast on a restricted network — the single most
+damaging thing a judge could see live. `_friendlyErrorMessage()`
+(`templates/click_router.html`) now translates that and similar raw
+browser network errors into a plain-language message at every call site
+that touches the network, and a new dismissible network-health banner
+(`_checkNetworkHealth()`) proactively probes OSRM on page load and, if
+it's unreachable, tells the visitor and links to the static, zero-network
+`/demo` page instead of leaving the live one looking broken.
+
+A "PS SIH26137" badge with an explanatory tooltip now sits next to the
+brand mark on both the live app's topbar and the static flagship demo
+(`src/build_multi_city_map.py`), closing the review's "connects features
+to the brief" gap — a judge landing on either page cold no longer has to
+work out which problem statement this answers.
+
+The review's "nice to have" load-test ask is also done: `loadtest.py`
+drives real concurrent requests at a real local `gunicorn` process and
+reports real latency/throughput numbers (see `docs/benchmarks.md`'s
+"Concurrency / load test" section) — including confirming the documented
+20-requests/minute rate limit actually rejects the 11th+ request in a
+burst, not just that the package is installed.
+
+Every question the review posed for Round 2 — the PS-speed-objective
+concession, the prior-art overlap, "why not QPSO," the OR-Tools
+comparison, and 21 others — is rehearsed with a fact-checked answer in
+[`docs/JUDGE_PREP.md`](JUDGE_PREP.md).
+

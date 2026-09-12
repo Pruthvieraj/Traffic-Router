@@ -15,8 +15,9 @@ pip install pytest
 pytest tests/ -v
 ```
 
-**421 Python tests** (510 total including the layout suite below, plus a
-separate 14-test Node.js frontend suite — see below), covering the QUBO
+**430 Python tests** (509 total including the layout suite below, plus a
+separate 14-test Node.js frontend suite — see below — for **523 tests in
+total**), covering the QUBO
 solver, the classical baselines, the multi-objective time/distance
 trade-off (`combine_objectives`, real-vs-cosmetic-objective checks), route
 explainability (`src/explain.py` — leg breakdowns, precedence-cost
@@ -100,7 +101,7 @@ runner, no npm install):
 node --test tests/frontend/*.test.js
 ```
 
-**And a 76-test real-browser layout suite** (`tests/test_layout.py`),
+**And a 79-test real-browser layout suite** (`tests/test_layout.py`),
 added after a real bug shipped through a fully green test suite and
 several rounds of manual screenshots: the topbar had a fixed height
 combined with `flex-wrap`, so on a narrower browser window its second row
@@ -172,6 +173,20 @@ showing once it opened — fixed by shifting all three left of the open
 drawer (never closing or hiding any of them, since Live re-optimize's own
 Stop button lives inside the drawer and has to stay reachable while that
 feed runs), locked in by `test_options_drawer_no_longer_overlaps_the_right_corner_panels`.
+Three more tests came out of a second, independent judge-style review that
+verified the deployed app going blank on a restricted network with only a
+raw `Failed to fetch` shown: `test_raw_fetch_failures_get_a_friendly_message_not_the_browser_error`
+checks that translation happens without needing a real dead network;
+`test_network_health_banner_shows_only_when_osrm_is_unreachable` stubs OSRM
+to fail vs. succeed and checks the dismissible health banner shows and
+hides correctly; and
+`test_ps_alignment_badge_is_visible_at_desktop_width_and_hidden_at_phone_width`
+checks the new "PS SIH26137" badge's visibility and tooltip content. Adding
+that badge's own info-icon to the topbar is also why the two older
+info-icon tooltip tests now scope their locator to `#optionsDrawer
+.info-icon` specifically, rather than the bare `.info-icon` class — with a
+second info-icon now living outside the drawer, the bare class match was
+ambiguous about which icon a test was actually exercising.
 
 All three suites run automatically on every push via
 `.github/workflows/tests.yml` — that's the badge at the top of this
