@@ -116,15 +116,58 @@ HTML_TEMPLATE = r"""<!doctype html>
 <style>__LEAFLET_CSS__</style>
 <script>__LEAFLET_JS__</script>
 <style>
-  html, body { margin:0; padding:0; height:100%; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-  #map { position:absolute; top:64px; bottom:0; left:0; right:0; }
+  /* Design tokens ported directly from templates/click_router.html's
+     :root block (a frontend-UX audit's single highest-leverage finding:
+     this file used to run an entirely separate, unrelated 2015-era
+     flat-UI palette — #2c3e50/#e74c3c/#f39c12/#9b59b6/#3388ff — sharing
+     no tokens with the live app at all, so the two screens read as two
+     different teams' work). Only the subset this file actually needs is
+     ported — no dark-theme variant, since this static file has no theme
+     toggle. */
+  :root {
+    --accent-1: #6366f1;
+    --accent-2: #8b5cf6;
+    --accent-cyan: #22d3ee;
+    --success: #10b981;
+    --warn: #f97316;
+    --danger: #ef4444;
+    --ink: #0f172a;
+    --ink-soft: #475569;
+    --surface-solid: #ffffff;
+    --border-soft: #eef0f3;
+    --shadow: 0 10px 32px rgba(15, 23, 42, 0.16), 0 1px 4px rgba(15, 23, 42, 0.08);
+  }
+  html, body {
+    margin:0; padding:0; height:100%;
+    /* 'Inter' first — matching the live app's typeface exactly for anyone
+       who has it installed locally — but deliberately NOT loaded from
+       Google Fonts here: this file's whole design point (see the module
+       docstring above) is working from a single double-clicked file with
+       zero network dependency beyond the map tiles themselves. Adding a
+       fonts.googleapis.com request would quietly break that guarantee.
+       The system-font fallback stack (below) is what most viewers will
+       actually see, and was already a reasonable match. */
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  #map { position:absolute; top:92px; bottom:0; left:0; right:0; }
   #topbar {
     height:64px; display:flex; align-items:center; gap:14px; padding:0 16px;
-    background:#1b2733; color:white; box-sizing:border-box; flex-wrap:wrap;
+    background:linear-gradient(120deg, #1e1b4b, #312e81); color:white; box-sizing:border-box; flex-wrap:wrap;
   }
   #topbar h1 { font-size:15px; margin:0; font-weight:600; white-space:nowrap; }
   #topbar h1 a { color:inherit; text-decoration:none; }
   #topbar h1 a:hover { text-decoration:underline; }
+  /* One-line cross-link strip (frontend-UX audit item #08 / Quick win #9)
+     — the two screens in this project used to link to each other nowhere
+     at all. Fixed height, added to #map's top offset above, so it never
+     participates in the topbar's own flex-wrap. */
+  #explainerStrip {
+    height:28px; display:flex; align-items:center; justify-content:center; gap:6px;
+    background:var(--surface-solid); color:var(--ink-soft); font-size:11.5px;
+    border-bottom:1px solid var(--border-soft); box-sizing:border-box; padding:0 12px; text-align:center;
+  }
+  #explainerStrip a { color:var(--accent-1); font-weight:600; text-decoration:none; }
+  #explainerStrip a:hover { text-decoration:underline; }
   /* PS-Alignment badge (SIH judge-review Feature 02) — same one-line
      orientation aid as templates/click_router.html's .ps-badge, static
      text + a native title= tooltip since this single-file demo has no
@@ -134,25 +177,25 @@ HTML_TEMPLATE = r"""<!doctype html>
      history) — the title/select/buttons already fill a narrow topbar
      without it. */
   #psBadge {
-    font-size:10px; font-weight:700; letter-spacing:0.3px; color:#c8d2dc;
-    border:1px solid #46586b; padding:2px 7px; border-radius:20px; white-space:nowrap; cursor:help;
+    font-size:10px; font-weight:700; letter-spacing:0.3px; color:#c7d2fe;
+    border:1px solid rgba(255,255,255,.35); padding:2px 7px; border-radius:20px; white-space:nowrap; cursor:help;
   }
   @media (max-width:760px) { #psBadge { display:none; } }
   #topbar select, #topbar button {
-    font-size:13px; padding:6px 10px; border-radius:6px; border:1px solid #46586b;
-    background:#26374a; color:white; cursor:pointer;
+    font-size:13px; padding:6px 10px; border-radius:6px; border:1px solid rgba(255,255,255,.3);
+    background:rgba(255,255,255,.12); color:white; cursor:pointer;
   }
-  #topbar button.active { background:#9b59b6; border-color:#9b59b6; }
+  #topbar button.active { background:var(--accent-2); border-color:var(--accent-2); }
   #legend {
-    position:absolute; bottom:16px; right:16px; background:white; padding:10px 14px;
-    border-radius:8px; font-size:12px; box-shadow:0 1px 6px rgba(0,0,0,.3); z-index:500; line-height:1.6;
+    position:absolute; bottom:16px; right:16px; background:var(--surface-solid); padding:10px 14px;
+    border-radius:8px; font-size:12px; box-shadow:var(--shadow); z-index:500; line-height:1.6; color:var(--ink);
   }
   #legend .sw { display:inline-block; width:14px; height:4px; margin-right:6px; vertical-align:middle; }
   #stats {
-    position:absolute; top:78px; left:16px; background:white; padding:10px 14px;
-    border-radius:8px; font-size:12px; box-shadow:0 1px 6px rgba(0,0,0,.3); z-index:500; max-width:260px; line-height:1.6;
+    position:absolute; top:106px; left:16px; background:var(--surface-solid); padding:10px 14px;
+    border-radius:8px; font-size:12px; box-shadow:var(--shadow); z-index:500; max-width:260px; line-height:1.6;
   }
-  #stats b { color:#1b2733; }
+  #stats b { color:var(--ink); }
 </style>
 </head>
 <body>
@@ -167,13 +210,14 @@ HTML_TEMPLATE = r"""<!doctype html>
   <button id="routeToggleBtn">Route: Quantum-inspired</button>
   <button id="spikeToggleBtn">Simulate disruption</button>
 </div>
+<div id="explainerStrip">Precomputed demo, works offline &mdash; for live click-anywhere routing with your own stops, <a href="/app" title="Only resolves when this page is served by the hosted app (e.g. at /demo) — a link into a live Flask route, not part of this static file itself.">open the full app &rarr;</a></div>
 <div id="map"></div>
 <div id="stats"></div>
 <div id="legend">
-  <div><span class="sw" style="background:#2ecc71"></span>Light traffic</div>
-  <div><span class="sw" style="background:#f39c12"></span>Moderate traffic</div>
-  <div><span class="sw" style="background:#e74c3c"></span>Heavy traffic</div>
-  <div><span class="sw" style="background:#2c3e50;height:3px"></span>Chosen route</div>
+  <div><span class="sw" style="background:var(--success)"></span>Light traffic</div>
+  <div><span class="sw" style="background:var(--warn)"></span>Moderate traffic</div>
+  <div><span class="sw" style="background:var(--danger)"></span>Heavy traffic</div>
+  <div><span class="sw" style="background:var(--accent-1);height:3px"></span>Chosen route</div>
 </div>
 
 <script>
@@ -221,9 +265,12 @@ let currentLayerGroup = L.layerGroup().addTo(map);
 let state = { city: CITY_NAMES[0], routeType: 'quantum', spiked: false };
 
 function congestionColor(mult) {
-  if (mult < 1.5) return '#2ecc71';
-  if (mult < 2.5) return '#f39c12';
-  return '#e74c3c';
+  // Same three hex values as this file's --success/--warn/--danger tokens
+  // above (JS can't read CSS custom properties without a getComputedStyle
+  // round-trip, so they're just repeated literally here).
+  if (mult < 1.5) return '#10b981';
+  if (mult < 2.5) return '#f97316';
+  return '#ef4444';
 }
 
 function render() {
@@ -254,12 +301,15 @@ function render() {
     label = 'Classical (nearest-neighbor + 2-opt)';
   }
 
-  L.polyline(route.path, { color: '#2c3e50', weight: 5, opacity: 0.9, dashArray: '8,6' }).addTo(currentLayerGroup);
+  // '#6366f1' — the same --accent-1 indigo click_router.html draws its own
+  // solved route in, so "the chosen route" reads as the same brand color
+  // on both screens.
+  L.polyline(route.path, { color: '#6366f1', weight: 5, opacity: 0.9, dashArray: '8,6' }).addTo(currentLayerGroup);
   route.order.forEach((name, i) => {
     const coords = data.nodes[name];
     L.marker(coords, {
       icon: L.divIcon({
-        className: '', html: `<div style="background:#2c3e50;color:white;border-radius:50%;width:24px;height:24px;
+        className: '', html: `<div style="background:#6366f1;color:white;border-radius:50%;width:24px;height:24px;
           text-align:center;line-height:24px;font-size:12px;">${i + 1}</div>`,
       })
     }).bindTooltip(name).addTo(currentLayerGroup);
