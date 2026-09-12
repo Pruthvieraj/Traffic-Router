@@ -334,9 +334,11 @@ def test_info_icon_tooltip_shows_its_text_on_click_and_hides_on_outside_click(li
     also fire), and clicking elsewhere should hide it again."""
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
-    page.click("#optionsBtn")  # every info-icon now lives inside the Options drawer
+    page.click("#optionsBtn")  # every info-icon *inside the drawer* lives there;
+    # the topbar's own PS-Alignment badge has an independent info-icon, so scope
+    # this locator to the drawer rather than the bare `.info-icon` class.
 
-    icon = page.locator(".info-icon").first
+    icon = page.locator("#optionsDrawer .info-icon").first
     assert icon.get_attribute("title") is None  # native tooltip attribute removed
     expected = icon.get_attribute("data-tip")
     assert expected and len(expected) > 10
@@ -361,8 +363,9 @@ def test_info_icon_tooltip_stays_within_the_viewport(live_server, browser):
     or right edge of the window, regardless of window width."""
     page = browser.new_page(viewport={"width": 375, "height": 900})
     page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
-    page.click("#optionsBtn")  # every info-icon now lives inside the Options drawer
-    page.locator(".info-icon").first.click()
+    page.click("#optionsBtn")  # scope to the drawer: the topbar's PS-Alignment
+    # badge has its own separate info-icon, and is hidden at this narrow width.
+    page.locator("#optionsDrawer .info-icon").first.click()
     page.wait_for_function(
         "document.getElementById('iconTooltip').classList.contains('visible')", timeout=3000,
     )
@@ -1980,6 +1983,104 @@ def test_options_drawer_no_longer_overlaps_the_right_corner_panels(live_server, 
     assert stats_box["right"] <= drawer_box["left"], "stats pill must not overlap the open drawer"
     assert stats_box["left"] < closed_box["left"], "the pill should have shifted left while the drawer was open"
     assert reopened_box == closed_box, "closing the drawer must restore the pill's original position exactly"
+
+
+# ---------- SIH Round-2 judge-review follow-ups ----------
+# A second, independent review (SIH-Round2-Judge-Review.docx) verified live,
+# in a network-restricted sandbox, that a plain fetch() failure (OSRM/
+# Nominatim unreachable — exactly what a filtered or congested venue wifi
+# would produce) surfaced as a raw browser TypeError ("Failed to fetch")
+# in the error toast, reading as the app being broken rather than the
+# network. The two tests below lock in the fix: _friendlyErrorMessage()
+# translates that one specific failure signature, and _checkNetworkHealth()
+# proactively surfaces it as a banner pointing at the zero-dependency
+# /demo page, rather than waiting for a judge to hit Solve and find out.
+
+def test_raw_fetch_failures_get_a_friendly_message_not_the_browser_error(live_server, browser):
+    """_friendlyErrorMessage() must recognize the browser's own generic
+    network-failure wording and replace it — but leave a REAL, specific
+    error (our own API's 400, an OSRM "no route" message) completely
+    alone, since that's actionable information a user should still see."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+
+    friendly = page.evaluate("""
+        () => _friendlyErrorMessage(new TypeError('Failed to fetch'))
+    """)
+    friendly_safari = page.evaluate("""
+        () => _friendlyErrorMessage(new TypeError('Load failed'))
+    """)
+    real_error = page.evaluate("""
+        () => _friendlyErrorMessage(new Error('Could not find a driving route between those points.'))
+    """)
+    fallback = page.evaluate("""
+        () => _friendlyErrorMessage(new Error(''), 'Incident simulation failed.')
+    """)
+
+    page.close()
+
+    assert 'failed to fetch' not in friendly.lower()
+    assert '/demo' in friendly
+    assert 'failed to fetch' not in friendly_safari.lower() and '/demo' in friendly_safari
+    assert real_error == 'Could not find a driving route between those points.'
+    assert fallback == 'Incident simulation failed.'
+
+
+def test_network_health_banner_shows_only_when_osrm_is_unreachable(live_server, browser):
+    """Two runs of the same real function, _checkNetworkHealth(): once
+    with OSRM stubbed to fail (banner must appear, linking to /demo),
+    once with it stubbed to succeed (banner must stay hidden) — proving
+    the check is a real reachability probe, not decoration that always
+    shows or never shows."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    page.route("**router.project-osrm.org/table/**", lambda route: route.abort())
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page.evaluate("() => _checkNetworkHealth()")
+    page.wait_for_function("document.getElementById('networkBanner').style.display === 'flex'", timeout=6000)
+    banner_html = page.inner_html("#networkBanner")
+    assert '/demo' in banner_html
+    page.click("#networkBannerClose")
+    assert page.eval_on_selector("#networkBanner", "el => el.style.display") == "none"
+    page.close()
+
+    page2 = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page2)
+    page2.route("**router.project-osrm.org/table/**", lambda route: route.fulfill(
+        json={"code": "Ok", "durations": [[0, 300], [300, 0]]}
+    ))
+    page2.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    page2.evaluate("() => _checkNetworkHealth()")
+    page2.wait_for_timeout(500)
+    still_hidden = page2.eval_on_selector("#networkBanner", "el => getComputedStyle(el).display")
+    page2.close()
+    assert still_hidden == "none"
+
+
+def test_ps_alignment_badge_is_visible_at_desktop_width_and_hidden_at_phone_width(live_server, browser):
+    """Feature 02 from the judge review: nothing previously told a judge,
+    on screen, how the live app maps to PS SIH26137's actual objectives —
+    it lived only in the README. The badge is deliberately hidden below
+    860px (same breakpoint the brand's own <h1> already hides at) rather
+    than fight for space in an already-tight phone topbar."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    _stub_map_tiles(page)
+    page.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    desktop_visible = page.is_visible(".ps-badge")
+    tooltip_text = page.get_attribute(".ps-badge + .info-icon", "title") or page.evaluate(
+        "() => document.querySelector('.ps-badge + .info-icon').dataset.tip"
+    )
+    page.close()
+
+    page2 = browser.new_page(viewport={"width": 500, "height": 900})
+    _stub_map_tiles(page2)
+    page2.goto(f"{live_server}/app", wait_until="networkidle", timeout=15000)
+    phone_hidden = page2.is_hidden(".ps-badge")
+    page2.close()
+
+    assert desktop_visible
+    assert phone_hidden
+    assert "SIH26137" in tooltip_text and "convergence speed" in tooltip_text.lower()
 
 
 @pytest.mark.parametrize("panel_id,open_sequence", [

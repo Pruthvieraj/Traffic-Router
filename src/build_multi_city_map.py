@@ -125,6 +125,19 @@ HTML_TEMPLATE = r"""<!doctype html>
   #topbar h1 { font-size:15px; margin:0; font-weight:600; white-space:nowrap; }
   #topbar h1 a { color:inherit; text-decoration:none; }
   #topbar h1 a:hover { text-decoration:underline; }
+  /* PS-Alignment badge (SIH judge-review Feature 02) — same one-line
+     orientation aid as templates/click_router.html's .ps-badge, static
+     text + a native title= tooltip since this single-file demo has no
+     custom-tooltip JS of its own. Hidden below 760px so it never
+     contributes to the exact fixed-height/flex-wrap overflow bug this
+     topbar already had once (see templates/click_router.html's own
+     history) — the title/select/buttons already fill a narrow topbar
+     without it. */
+  #psBadge {
+    font-size:10px; font-weight:700; letter-spacing:0.3px; color:#c8d2dc;
+    border:1px solid #46586b; padding:2px 7px; border-radius:20px; white-space:nowrap; cursor:help;
+  }
+  @media (max-width:760px) { #psBadge { display:none; } }
   #topbar select, #topbar button {
     font-size:13px; padding:6px 10px; border-radius:6px; border:1px solid #46586b;
     background:#26374a; color:white; cursor:pointer;
@@ -145,6 +158,7 @@ HTML_TEMPLATE = r"""<!doctype html>
 <body>
 <div id="topbar">
   <h1><a href="/" title="Back to QubitRoute home (when viewed via the hosted app)">Quantum-Inspired Route Optimizer</a></h1>
+  <span id="psBadge" title="PS SIH26137 &middot; Egreen Quanta, honestly scored against the actual listing: graph-based network modeling, mathematical (QUBO) formulation, and benchmarking vs. classical &amp; exact methods are all met or exceeded. Large-scale VRP (100+ stops) is partial -- exact solving caps at 9 interior stops. 'Improve convergence speed vs. classical' is contradicted by our own Experiment 1 on plain routing -- the real, measured advantage is constraint composability instead.">PS SIH26137</span>
   <select id="citySelect"></select>
   <select id="basemapSelect">
     <option value="satellite">Satellite view</option>

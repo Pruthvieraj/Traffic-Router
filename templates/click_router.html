@@ -168,6 +168,18 @@
     background: linear-gradient(120deg, var(--accent-1), var(--accent-2));
     color: white; padding: 2.5px 7px; border-radius: 20px; white-space: nowrap;
   }
+  /* PS-Alignment badge — SIH judge-review Feature 02: nothing previously
+     told a judge, on screen, how this maps to the actual problem
+     statement, so they had to be told to go read a README. Deliberately
+     an outline style (not the filled gradient above) so it reads as
+     reference information, not another shouted claim, and deliberately
+     static + an info-icon (no JS, no new endpoint) rather than a bigger
+     panel — this is a one-line orientation aid, not a dashboard. */
+  .ps-badge {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+    background: transparent; color: var(--ink-soft); border: 1px solid var(--panel-border);
+    padding: 2px 7px; border-radius: 20px; white-space: nowrap; margin-right: -2px;
+  }
   .divider { width: 1px; height: 26px; background: var(--topbar-divider); margin: 0 2px; flex-shrink: 0; }
 
   /* The dropdown-chevron and search-icon glyphs below are inline SVG data
@@ -436,6 +448,31 @@
     font-size: 13px; z-index: 600; text-align: center; max-width: 620px; color: var(--ink-soft);
   }
   #hint b { color: var(--ink); }
+
+  /* Network-Health Indicator — a SIH judge-review finding, verified
+     live: this app quietly depends on three external, unauthenticated
+     services (OSRM, Nominatim, map tiles) with no offline fallback
+     message, so a filtered/proxied/congested venue network used to just
+     produce a raw "Failed to fetch" toast the first time someone hit
+     Solve. This banner checks OSRM reachability proactively on load
+     (see _checkNetworkHealth below) and points straight at the
+     zero-dependency /demo page instead of waiting for a judge to
+     discover the failure themselves. */
+  #networkBanner {
+    position: absolute; top: 64px; left: 50%; transform: translateX(-50%); padding: 10px 16px;
+    font-size: 12.5px; z-index: 650; display: none; align-items: center; gap: 10px;
+    max-width: 560px; color: var(--ink-soft); text-align: left; line-height: 1.4;
+    background: var(--panel-bg); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(249, 115, 22, 0.45); box-shadow: var(--shadow); border-radius: var(--radius);
+  }
+  #networkBanner a { color: var(--accent-cyan); font-weight: 700; text-decoration: none; }
+  #networkBanner a:hover { text-decoration: underline; }
+  #networkBanner button {
+    background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer;
+    padding: 0 2px; line-height: 1; flex-shrink: 0; border-radius: 6px;
+  }
+  #networkBanner button:hover { color: var(--danger); }
+  @media (max-width: 620px) { #networkBanner { max-width: calc(100% - 24px); font-size: 12px; } }
   #exampleRouteBtn {
     display: inline-block; margin-left: 10px; font-family: inherit; font-size: 12px; font-weight: 700;
     padding: 4px 11px; border-radius: 20px; border: none; cursor: pointer; color: white;
@@ -998,6 +1035,7 @@
   /* ---------- Responsive ---------- */
   @media (max-width: 860px) {
     #brand h1 { display: none; }
+    .ps-badge, .ps-badge + .info-icon { display: none; }
     #hint { max-width: 88vw; font-size: 12px; padding: 8px 14px; top: 12px; }
     #stats { left: 12px; right: 12px; bottom: 12px; max-width: none; }
     #directions { left: 12px; right: 12px; width: auto; top: auto; bottom: 12px; max-height: 38vh; }
@@ -1025,6 +1063,8 @@
     <h1>Route Optimizer</h1>
     <span class="badge">Quantum-inspired</span>
   </a>
+  <span class="badge ps-badge">PS SIH26137</span>
+  <i class="info-icon" title="PS SIH26137 · Egreen Quanta — 'Quantum-Inspired Intelligent Traffic Route Optimization,' honestly scored against the actual listing: graph-based network modeling — met. Mathematical (QUBO) formulation — met. Constraint handling (precedence, capacity, time windows, solver-level not a filter) — exceeds the ask. Benchmarking vs. classical &amp; exact methods (5 documented experiments) — exceeds the ask. Large-scale VRP (100+ stops/day) — partial: exact solving caps at 9 interior stops, a clustering heuristic extends to 40 with no optimality guarantee above that. 'Improve convergence speed vs. classical' — our own Experiment 1 shows classical 2-opt winning on plain routing; the real, measured advantage is constraint composability instead (see the Insights dashboard).">i</i>
   <div class="divider"></div>
   <select id="citySelect">
     {% for c in cities %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
@@ -1059,6 +1099,11 @@
   <button id="statsStripBtn" type="button" title="Open the Insights dashboard for the full benchmark story behind these numbers">
     <span class="dot"></span><span id="statsStripText">Loading live stats&hellip;</span>
   </button>
+  <div id="networkBanner" role="status">
+    <span>&#9888;&#65039;</span>
+    <span>Having trouble reaching the routing service on this network. The offline flagship demo works with zero internet — <a href="/demo" target="_blank" rel="noopener">open it</a>.</span>
+    <button id="networkBannerClose" title="Dismiss">&times;</button>
+  </div>
   <div id="optionsDrawer">
     <div id="optionsDrawer-header">
       <span>Options</span>
@@ -1463,6 +1508,29 @@ function _pushToast(containerId, msg, durationMs) {
   }, durationMs);
 }
 
+// SIH Round-2 judge-review finding, verified live in a network-restricted
+// sandbox: a plain fetch() failure (OSRM/Nominatim unreachable — a locked-
+// down venue wifi, a proxy, or simple congestion) throws a raw browser
+// TypeError whose .message is a cryptic string ("Failed to fetch" in
+// Chrome, "Load failed" in Safari, "NetworkError when attempting to fetch
+// resource." in Firefox) — showing that verbatim in a toast reads as the
+// app being broken, not the network. This translates ONLY that one
+// specific failure signature into an honest, actionable message; every
+// other error (our own API's real 4xx/5xx, an OSRM "no route found") has
+// its own specific message already and passes through unchanged, with the
+// caller's own fallback text used if the browser gave no message at all.
+const _RAW_NETWORK_ERROR_SIGNATURES = [
+  'failed to fetch', 'load failed', 'networkerror', 'network request failed', 'internet connection appears to be offline',
+];
+function _friendlyErrorMessage(err, fallback) {
+  const raw = (err && err.message) ? err.message : '';
+  const looksLikeRawNetworkFailure = _RAW_NETWORK_ERROR_SIGNATURES.some(sig => raw.toLowerCase().includes(sig));
+  if (looksLikeRawNetworkFailure) {
+    return 'Routing service unreachable — check your connection (the offline flagship demo at /demo works with zero internet).';
+  }
+  return raw || fallback || 'Request failed.';
+}
+
 function showError(msg) { _pushToast('error', msg, 5000); }
 
 function showNotice(msg) { _pushToast('notice', msg, 4000); }
@@ -1690,6 +1758,52 @@ document.getElementById('drawerInsightsBtn').addEventListener('click', () => ope
     }
   } catch (err) { /* capability check failing shouldn't block the rest of the app from loading */ }
 })();
+
+// ---------- Network-Health Indicator ----------
+// SIH judge-review finding, verified live in a network-restricted
+// sandbox: this app quietly depends on three external, unauthenticated
+// services (OSRM, Nominatim, map tiles), and used to have no offline
+// fallback message — a filtered/proxied venue wifi just produced a raw
+// "Failed to fetch" toast the first time someone clicked Solve. Checked
+// once, proactively, on load — a single lightweight OSRM request with a
+// short timeout, since a full route/table call isn't needed just to know
+// whether the service is reachable at all — rather than waiting for a
+// judge to discover the failure the hard way. A false negative here
+// (the probe times out but OSRM would've worked) costs nothing but a
+// dismissible banner; Solve itself is never disabled by this, since
+// _friendlyErrorMessage() above is the real safety net either way.
+async function _checkNetworkHealth() {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4000);
+  try {
+    // A single-pair table request is the cheapest real OSRM call that
+    // exercises the actual routing service, not just its TCP port.
+    const url = `${OSRM_BASE_URL}/table/v1/driving/77.5946,12.9716;77.6,12.95?annotations=duration`;
+    const resp = await fetch(url, { signal: controller.signal });
+    if (!resp.ok) throw new Error(`status ${resp.status}`);
+    const data = await resp.json();
+    if (data.code !== 'Ok') throw new Error(data.code || 'not ok');
+  } catch (err) {
+    const banner = document.getElementById('networkBanner');
+    banner.style.display = 'flex';
+    animateIn(banner);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+document.getElementById('networkBannerClose').addEventListener('click', () => {
+  document.getElementById('networkBanner').style.display = 'none';
+});
+// Same guard the first-run tour uses just above: a real visitor never has
+// navigator.webdriver set, but this project's own Playwright suite
+// launches fresh pages constantly and (unlike /api/capabilities or
+// /api/analytics, both same-origin calls into the test's own live_server)
+// this check hits the real external OSRM host — skip the automatic
+// on-load run under automation so the suite doesn't depend on outbound
+// network access it may not have; dedicated tests call
+// _checkNetworkHealth() directly instead, the same way dedicated tour
+// tests bypass this exact guard for the tour.
+if (!navigator.webdriver) _checkNetworkHealth();
 
 // ---------- "Try an example route" first-run button ----------
 // A judge/recruiter with 90 seconds shouldn't have to hand-place several
@@ -2134,7 +2248,7 @@ document.getElementById('precImpactBtn').addEventListener('click', async () => {
       <div class="impact-note">Solved this exact route twice — once with every rule below enforced, once with none — using the same method and traffic conditions, to measure the real cost of these specific rules on this specific route.</div>
     `;
   } catch (err) {
-    resultEl.innerHTML = `<div class="impact-note">${err.message || 'Request failed.'}</div>`;
+    resultEl.innerHTML = `<div class="impact-note">${escapeHtml(_friendlyErrorMessage(err))}</div>`;
   } finally {
     btn.disabled = false;
     btn.textContent = originalLabel;
@@ -2402,7 +2516,7 @@ async function compareMethods() {
       <div class="footnote">This is one instance, not a general guarantee either method always wins — see the README's benchmark experiments for aggregate comparisons across many random instances.${twNote}</div>
     `;
   } catch (err) {
-    document.getElementById('compareContent').innerHTML = `<p class="import-help">Comparison failed: ${escapeHtml(err.message || 'a request failed.')}</p>`;
+    document.getElementById('compareContent').innerHTML = `<p class="import-help">Comparison failed: ${escapeHtml(_friendlyErrorMessage(err, 'a request failed.'))}</p>`;
   }
 }
 
@@ -3029,7 +3143,7 @@ async function simulateIncident(legIdx) {
       method: lastSolveContext.method, hour: lastSolveContext.hour,
     };
   } catch (err) {
-    showError(err.message || 'Incident simulation failed.');
+    showError(_friendlyErrorMessage(err, 'Incident simulation failed.'));
   } finally {
     document.querySelectorAll('.incident-btn').forEach(b => { b.disabled = false; });
   }
@@ -3198,7 +3312,7 @@ async function _liveReoptTickSingle() {
       if (heroLabelEl) heroLabelEl.textContent = `Estimated drive time · ${formatHour(newHour)} traffic (live)`;
     }
   } catch (err) {
-    stopLiveReopt(`Live demo stopped — ${err.message || 'a request failed.'}`);
+    stopLiveReopt(`Live demo stopped — ${_friendlyErrorMessage(err, 'a request failed.')}`);
   } finally {
     liveReoptTickInFlight = false;
   }
@@ -3278,7 +3392,7 @@ async function _liveReoptTickFleet() {
       if (heroLabelEl) heroLabelEl.textContent = `Total fleet drive time · ${formatHour(newHour)} traffic (live)`;
     }
   } catch (err) {
-    stopLiveReopt(`Live demo stopped — ${err.message || 'a request failed.'}`);
+    stopLiveReopt(`Live demo stopped — ${_friendlyErrorMessage(err, 'a request failed.')}`);
   } finally {
     liveReoptTickInFlight = false;
   }
@@ -3564,7 +3678,7 @@ async function solveSingleVehicle() {
     _recordHistoryEntry({ mode: 'single', costMinutes: solveData.cost_minutes, savingsPct: solveData.savings_vs_naive_pct });
     _setLiveReoptButtonEnabled(true);
   } catch (err) {
-    showError(err.message || 'Request failed.');
+    showError(_friendlyErrorMessage(err));
   } finally {
     btn.classList.remove('loading');
     btn.disabled = clickedPoints.length < 2;
@@ -3700,7 +3814,7 @@ async function solveFleet(nVehicles) {
     _tourOnSolved(true);
     _setLiveReoptButtonEnabled(true);
   } catch (err) {
-    showError(err.message || 'Request failed.');
+    showError(_friendlyErrorMessage(err));
   } finally {
     btn.classList.remove('loading');
     btn.disabled = clickedPoints.length < 2;
