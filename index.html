@@ -1425,10 +1425,11 @@ svg.leaflet-image-layer.leaflet-interactive path {
   }
   #legend .sw { display:inline-block; width:14px; height:4px; margin-right:6px; vertical-align:middle; }
   #stats {
-    position:absolute; top:106px; left:16px; background:var(--surface-solid); padding:10px 14px;
+    position:absolute; top:106px; left:64px; background:var(--surface-solid); padding:10px 14px;
     border-radius:8px; font-size:12px; box-shadow:var(--shadow); z-index:500; max-width:260px; line-height:1.6;
   }
   #stats b { color:var(--ink); }
+  @media (max-width:520px) { #stats { max-width:calc(100vw - 80px); } }
 </style>
 </head>
 <body>
