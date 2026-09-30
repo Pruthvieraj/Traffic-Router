@@ -163,7 +163,7 @@ verified now, see "Precedence" in [`docs/live-app.md`](docs/live-app.md)):
 [`docs/pitching.md`](docs/pitching.md).
 
 ## Team-QubitRoute
-Kashish Chelwani | Kavya | Om | Palak | Prisha | Pruthvieraj Ghule
+Kashish Chelwani | Kavya | Om | Palak Goswami| Prisha | Pruthvieraj Ghule
 
 ## License
 
