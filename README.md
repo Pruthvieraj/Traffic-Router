@@ -162,6 +162,14 @@ cross-cluster precedence and fleet-mode live traffic are both shipped and
 verified now, see "Precedence" in [`docs/live-app.md`](docs/live-app.md)):
 [`docs/pitching.md`](docs/pitching.md).
 
+## Team-QubitRoute
+Kashish Chelwani
+Kavya Singh
+Om Bansal
+Palak Goswami
+Prisha Rana
+Pruthvieraj Ghule
+
 ## License
 
 [MIT](LICENSE) — see the LICENSE file. Business/IP documents
