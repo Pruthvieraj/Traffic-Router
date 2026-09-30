@@ -1,14 +1,5 @@
 # Quantum-Inspired Constraint-Aware Route Optimizer
 
-[![tests](https://github.com/Pruthvieraj/Traffic-Router/actions/workflows/tests.yml/badge.svg)](https://github.com/Pruthvieraj/Traffic-Router/actions/workflows/tests.yml)
-
-*(Sourced from `.github/workflows/tests.yml`, which runs the full test
-suite on every push. Shows "no status" until that file and `.gitignore`
-are actually pushed to GitHub — both are git-tracked here, but a
-drag-and-drop web upload can silently skip dotfiles/dotfolders. If the
-badge is broken on your fork, check that repo's file list on GitHub.com
-directly for a `.github` folder.)*
-
 Built for **SIH 2026 — PS SIH26137 "Quantum-Inspired Traffic Route
 Optimization"** (Egreen Quanta).
 
